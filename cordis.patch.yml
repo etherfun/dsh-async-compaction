@@ -1,0 +1,25 @@
+# Background context pre-compaction bundle patch.
+#
+# Inserts the plugin as a host-plane row. Defaults are intentionally the
+# documented design defaults: fixed mode at 70% of the context window, native
+# compaction (80% of the window, reduced by the backend's own headroom) stays
+# mounted as the backstop.
+- insert:
+    - id: pre-compact
+      name: '@local/dsh-pre-compact'
+      config:
+        enabled: true
+        triggerMode: fixed
+        fixedThreshold: 0.7
+        nativeThreshold: auto
+        minThreshold: 0.5
+        maxThreshold: 0.75
+        fallbackThreshold: 0.65
+        minInterval: 60000
+        applyStrategy: safe
+        minShadowedTokens: 1024
+        hookManualCompact: true
+        dryRun: false
+        autoAdjustFixedThreshold: true
+        logLevel: info
+        statusCommand: true

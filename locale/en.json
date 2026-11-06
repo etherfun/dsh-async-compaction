@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Background pre-compaction",
+    "description": "Condenses older context in the background before native compaction has to pause the agent, then merges the result without losing newer messages."
+  }
+}

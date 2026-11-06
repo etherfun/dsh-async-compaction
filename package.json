@@ -1,0 +1,60 @@
+{
+  "name": "@local/dsh-pre-compact",
+  "version": "0.1.0",
+  "description": "Background context pre-compaction for DeepSeek Harness: summarize older history off the critical path and apply it atomically before native compaction has to stop the agent.",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "src",
+    "locale/*.json",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "docs"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "author": "etherfun",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/etherfun/dsh-pre-compact.git"
+  },
+  "homepage": "https://github.com/etherfun/dsh-pre-compact#readme",
+  "bugs": {
+    "url": "https://github.com/etherfun/dsh-pre-compact/issues"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "compaction",
+    "context-management",
+    "dsh插件"
+  ],
+  "license": "MIT"
+}
