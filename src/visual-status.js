@@ -6,7 +6,7 @@
  * runs off the session log), and "background compaction finished" for a short
  * window after the atomic commit. It exposes only aggregate counters — never
  * message content.
- * @module dsh-pre-compact/visual-status
+ * @module dsh-async-compaction/visual-status
  */
 
 /** How long a finished compaction stays visible as the "done" state. */

@@ -6,7 +6,7 @@
  * a settings form). A locally linked checkout cannot resolve bare host
  * packages, so this module resolves to `undefined` and the plugin validates its
  * config itself with the same defaults.
- * @module dsh-pre-compact/config-schema
+ * @module dsh-async-compaction/config-schema
  */
 
 import { loadConfigSchema } from './config.js'

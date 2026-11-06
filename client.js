@@ -33,14 +33,14 @@
  */
 
 window.__ModuleLoader__.load({
-  id: '@local/dsh-pre-compact',
+  id: 'dsh-async-compaction',
   factory(require) {
     const React = require('react')
     const h = React.createElement
 
     const NS = 'preCompact'
     const SETTINGS_NAMESPACE = 'pre-compact'
-    const BUNDLE = '@local/dsh-pre-compact'
+    const BUNDLE = 'dsh-async-compaction'
 
     /** Host resource the composer-dock indicator polls; the payload is documented below. */
     const STATUS_PATH = '/api/pre-compact/status'
@@ -60,7 +60,7 @@ window.__ModuleLoader__.load({
     const HISTORY_ROWS = 10
 
     /** Right-sidebar tab type identity: the body, title and opener all use it. */
-    const TAB_ID = '@local/dsh-pre-compact/context'
+    const TAB_ID = 'dsh-async-compaction/context'
     const TAB_KIND = 'pre-compact'
 
     /** Existing strategy labels reused by the panel's status chips. */

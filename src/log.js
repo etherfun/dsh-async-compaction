@@ -12,7 +12,7 @@
  *
  * Message content is never logged. Field values are truncated so a pathological
  * error string cannot grow the buffer without bound.
- * @module dsh-pre-compact/log
+ * @module dsh-async-compaction/log
  */
 
 const LEVEL_ORDER = { debug: 10, info: 20, warn: 30, error: 40 }

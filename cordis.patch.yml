@@ -6,7 +6,7 @@
 # mounted as the backstop.
 - insert:
     - id: pre-compact
-      name: '@local/dsh-pre-compact'
+      name: 'dsh-async-compaction'
       config:
         enabled: true
         triggerMode: fixed

@@ -1,4 +1,4 @@
-# dsh-pre-compact 对抗性代码审查（GLM-5.3-Flash, high）
+# dsh-async-compaction 对抗性代码审查（GLM-5.3-Flash, high）
 
 > **修复状态（Lead，2026-11-06）**：本报告的 3 个缺陷、flush 风险与 5 项建议已全部处理，`node --test` 从 182 增至 **190/190 通过（0 fail / 0 skip）**，4 个 smoke 全过。
 > - **缺陷-1（手动复用自动结果破坏手动语义）已修复**：`tryManualCompaction()` 新增 `supersedeAutomaticWork()`——丢弃自动 READY（`lastOutcome.reason='manual-request-supersedes'`）、abandon+abort 在途自动任务并 bump generation，随后总是启动全新手动任务（`retainTokens=0`、只要求更小）；自动专属的 `small-reduction` 失败不再误伤等待中的手动请求。回归：`a manual request discards an existing automatic READY result and compacts with manual semantics`、`an in-flight automatic task is abandoned when a manual request arrives`、`an automatic small-reduction failure never rejects a waiting manual request`。
@@ -11,7 +11,7 @@
 > - **建议-10**：删除 `fixedThreshold > 1` 死代码；`nativeThresholdRatioActual` 重复字段与 `rawOutput`/`llmStreamCall` 形状差异保留（无行为影响）；保留 clamp 0.9×threshold 与 pressureBudget 回退的“更宽容”取舍已在 README/docs/05 记录。
 > - 审查建议的“补断言”已全部落地：复用路径改为 supersede 语义断言、small-reduction 不误伤手动、checkpoint source、skip 收敛、flush、prune、restore。
 
-- 审查对象：`F:\dev\GitHub\dsh-pre-compact`（DSH 0.2.2-rc.1 插件，后台上下文预压缩）
+- 审查对象：`F:\dev\GitHub\dsh-async-compaction`（DSH 0.2.2-rc.1 插件，后台上下文预压缩）
 - 审查日期：2026-11-06
 - 方式：通读生产代码与测试 + 对照提取的真实宿主包（`research/extracted/dsh/node_modules/@deepseek-ai/*`）+ 实际运行 `node --test` 与 4 个 smoke + 对抗性验证脚本（`review/tmp-verify.mjs`，已删除）。
 - 只读审查：未修改任何生产文件。

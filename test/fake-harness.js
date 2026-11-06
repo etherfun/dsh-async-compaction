@@ -1,5 +1,5 @@
 /**
- * Fake DeepSeek Harness for the dsh-pre-compact test suite.
+ * Fake DeepSeek Harness for the dsh-async-compaction test suite.
  *
  * Zero third-party dependencies. The fake mirrors the runtime semantics the
  * plugin depends on, with the authoritative source being the extracted host

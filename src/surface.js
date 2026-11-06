@@ -9,7 +9,7 @@
  * - the durable `<compacted-summary>` checkpoint framing.
  *
  * Nothing here mutates a session.
- * @module dsh-pre-compact/surface
+ * @module dsh-async-compaction/surface
  */
 
 import { randomUUID } from 'node:crypto'

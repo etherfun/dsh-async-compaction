@@ -592,8 +592,8 @@ stateDiagram-v2
 
 **卡片注册契约（浏览器 half，`client.js`）**：
 
-- 模块经 `window.__ModuleLoader__.load({ id:'@local/dsh-pre-compact', factory })` 暴露；`inject: ['slots', 'locale', 'configForms']`。
-- 注册到 **`plugins.bundle.config`** 槽：`key = id = '@local/dsh-pre-compact'`、`locale = 'preCompact'`，所以它出现在"Plugins → 本 bundle 详情页"描述下方，而**不是** Settings 分区（不新增页面/路由，也不复制一份配置文档）。
+- 模块经 `window.__ModuleLoader__.load({ id:'dsh-async-compaction', factory })` 暴露；`inject: ['slots', 'locale', 'configForms']`。
+- 注册到 **`plugins.bundle.config`** 槽：`key = id = 'dsh-async-compaction'`、`locale = 'preCompact'`，所以它出现在"Plugins → 本 bundle 详情页"描述下方，而**不是** Settings 分区（不新增页面/路由，也不复制一份配置文档）。
 - 注册被两重门槛包裹：`ctx.configForms.whileServed(['pre-compact'], () => ctx.slots.inject('plugins.bundle.config', …))`。Host 没有提供该配置命名空间（schemastery 不可解析、行配置只读/未挂载）时卡片不出现；`form.getSnapshot().status` 为 `loading`/`unavailable`/`writable:false` 时卡片显示对应占位。
 - 卡片绑定 `ctx.configForms.get('pre-compact')` —— 与插件行是**同一个设置文档**；保存用 `form.mutate(ops, snapshot.revision)`，`ops` 是**每个卡片字段**一条 `{op:'set', path:[key], value}`（不是只提交脏字段），revision 由 Host 做并发栅栏。
 - 卡片顶部固定显示边界说明（双语）：“本插件只接管压缩的时机与异步执行；保留区间、摘要模型与摘要质量由当前压缩后端（或其它压缩插件）决定，这里不改写它们。”
@@ -668,7 +668,7 @@ stateDiagram-v2
 **入口与注册（`client.js`）**：
 
 - 会话头部右侧 utilities：`conversation.session.header.utilities` 注册「预压缩」按钮（`id:'pre-compact'`、`order:10`、`locale:NS`，`title`/`aria-label` = “打开后台预压缩面板”）；点击调用 `sidebarRight.openTab('pre-compact')`；无 session/sidebar 时静默 no-op。
-- 右侧 tab：`ctx.inject(['sidebarRight','sidebarRightTabs'])` 成功后，`sidebarRightTabs.register({ id:'@local/dsh-pre-compact/context', kind:'pre-compact', priority:'extension', title: () => locale.bind(NS)('viewLabel') })`；面板 body 通过 `slots.register({ name:'sidebar.right.pane.tab', key:TAB_ID }, CompactionPanel)` 提供。
+- 右侧 tab：`ctx.inject(['sidebarRight','sidebarRightTabs'])` 成功后，`sidebarRightTabs.register({ id:'dsh-async-compaction/context', kind:'pre-compact', priority:'extension', title: () => locale.bind(NS)('viewLabel') })`；面板 body 通过 `slots.register({ name:'sidebar.right.pane.tab', key:TAB_ID }, CompactionPanel)` 提供。
 - **不再注册 `conversation.view`**（会话视图无该标签）；`sidebarRight`/`sidebarRightTabs` 缺失时整个 inject 块跳过，设置卡片/composer 指示器不受影响。
 - 两个服务均为浏览器运行时契约；真实 sidebar 行为未在浏览器验证。
 

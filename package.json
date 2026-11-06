@@ -1,5 +1,5 @@
 {
-  "name": "@local/dsh-pre-compact",
+  "name": "dsh-async-compaction",
   "version": "0.1.0",
   "description": "Background context pre-compaction for DeepSeek Harness: summarize older history off the critical path and apply it atomically before native compaction has to stop the agent.",
   "type": "module",
@@ -28,11 +28,11 @@
   "author": "etherfun",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/etherfun/dsh-pre-compact.git"
+    "url": "git+https://github.com/etherfun/dsh-async-compaction.git"
   },
-  "homepage": "https://github.com/etherfun/dsh-pre-compact#readme",
+  "homepage": "https://github.com/etherfun/dsh-async-compaction#readme",
   "bugs": {
-    "url": "https://github.com/etherfun/dsh-pre-compact/issues"
+    "url": "https://github.com/etherfun/dsh-async-compaction/issues"
   },
   "dsh": {
     "bundle": {

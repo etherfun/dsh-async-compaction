@@ -13,7 +13,7 @@
  * The hook delegates to the original method whenever the plugin is disabled,
  * paused, in dry-run mode, or when the engine cannot be wrapped — the native
  * `/compact` behavior is never lost.
- * @module dsh-pre-compact/manual-hook
+ * @module dsh-async-compaction/manual-hook
  */
 
 import { compactionServiceOf } from './native-policy.js'

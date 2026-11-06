@@ -4,7 +4,7 @@
  * The plugin intentionally imports nothing outside `node:` builtins and its own
  * files: a locally linked DSH bundle cannot resolve the host's `@deepseek-ai/*`
  * packages (see README "Known limitations").
- * @module dsh-pre-compact/util
+ * @module dsh-async-compaction/util
  */
 
 /** @param {number} n @param {number} lo @param {number} hi */

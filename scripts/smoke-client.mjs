@@ -136,22 +136,22 @@ if (typeof onClick === 'function') onClick()
 const dict = locales[0]?.dict
 const dictOk = dict !== undefined && typeof dict.en === 'object' && typeof dict.zh === 'object'
 const ok =
-  captured.id === '@local/dsh-pre-compact' &&
+  captured.id === 'dsh-async-compaction' &&
   registrations.length === 4 &&
   entry?.definition?.name === 'plugins.bundle.config' &&
-  entry?.definition?.key === '@local/dsh-pre-compact' &&
+  entry?.definition?.key === 'dsh-async-compaction' &&
   entry?.definition?.locale === 'preCompact' &&
   typeof entry?.component === 'function' &&
   dock?.definition?.id === 'pre-compact' &&
   dock?.definition?.order === 0 &&
   typeof dock?.component === 'function' &&
-  tab?.id === '@local/dsh-pre-compact/context' &&
+  tab?.id === 'dsh-async-compaction/context' &&
   tab?.kind === 'pre-compact' &&
   tab?.priority === 'extension' &&
   typeof tab?.title === 'function' &&
   typeof tab.title() === 'string' &&
   body?.definition?.name === 'sidebar.right.pane.tab' &&
-  body?.definition?.key === '@local/dsh-pre-compact/context' &&
+  body?.definition?.key === 'dsh-async-compaction/context' &&
   typeof body?.component === 'function' &&
   button?.definition?.name === 'conversation.session.header.utilities' &&
   button?.definition?.id === 'pre-compact' &&

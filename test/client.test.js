@@ -374,10 +374,10 @@ function mountComponent(Component, props) {
 
 // --- module contract ---------------------------------------------------------
 test('registers the settings card, dock indicator and right-sidebar seats', () => {
-  assert.equal(captured[0].id, '@local/dsh-pre-compact')
+  assert.equal(captured[0].id, 'dsh-async-compaction')
   assert.equal(internals.NS, 'preCompact')
   assert.equal(internals.SETTINGS_NAMESPACE, 'pre-compact')
-  assert.equal(internals.BUNDLE, '@local/dsh-pre-compact')
+  assert.equal(internals.BUNDLE, 'dsh-async-compaction')
   assert.deepEqual(plugin.inject, ['slots', 'locale', 'configForms'])
   assert.equal(localeNamespace, 'preCompact')
   assert.ok(localeTable.en, 'en dictionary')
@@ -400,8 +400,8 @@ test('registers the settings card, dock indicator and right-sidebar seats', () =
     'the old conversation-view tab is gone',
   )
 
-  assert.equal(config.spec.key, '@local/dsh-pre-compact')
-  assert.equal(config.spec.id, '@local/dsh-pre-compact')
+  assert.equal(config.spec.key, 'dsh-async-compaction')
+  assert.equal(config.spec.id, 'dsh-async-compaction')
   assert.equal(config.spec.locale, localeNamespace)
 
   assert.equal(dock.spec.id, 'pre-compact')
@@ -420,7 +420,7 @@ test('registers the settings card, dock indicator and right-sidebar seats', () =
   // The tab type is registered as an extension, with a live title thunk.
   assert.equal(tabRegistrations.length, 1)
   const tab = tabRegistrations[0]
-  assert.equal(tab.id, '@local/dsh-pre-compact/context')
+  assert.equal(tab.id, 'dsh-async-compaction/context')
   assert.equal(tab.kind, 'pre-compact')
   assert.equal(tab.priority, 'extension')
   assert.equal(typeof tab.title, 'function')

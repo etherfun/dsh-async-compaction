@@ -1,6 +1,6 @@
-# 06 · 把 dsh-pre-compact 重构为 TypeScript 的可行性报告（证据版）
+# 06 · 把 dsh-async-compaction 重构为 TypeScript 的可行性报告（证据版）
 
-> 调研范围：`F:\dev\GitHub\dsh-pre-compact`（纯 ESM JS：`index.js` + `src/*.js` + `client.js` + `node:test` 测试）
+> 调研范围：`F:\dev\GitHub\dsh-async-compaction`（纯 ESM JS：`index.js` + `src/*.js` + `client.js` + `node:test` 测试）
 > 目标形态：TypeScript（Host） + TSX（Browser half），编译产物仍满足 DSH 第三方插件契约
 > 本报告只做调研与探针，**未改动任何生产文件**；探针目录 `F:\dev\GitHub\dsh-ts-probe`（仓库外）已按要求清理。
 > 相关前序报告：`research/02-plugin-platform.md`（插件平台契约）、`research/05-session-token.md`（session/tokenMeter）。
@@ -55,7 +55,7 @@
 
 | 契约点 | 事实 | 证据 |
 |---|---|---|
-| 入口解析 | Loader 用行 `name` 走 Node 解析（`main`/`exports`），与文件是否由 TS 编译无关；`dist/index.js` 只要被 `main`/`exports["."]` 指到即可 | `host-plugin.md:9-27`（清单示例）；本仓库以 `link:F:/dev/GitHub/dsh-pre-compact` 挂载（profile `C:\Users\q1325\.dsh\profiles\web\package.json:7`），行引用在同目录 `cordis.patch.yml:544-545` |
+| 入口解析 | Loader 用行 `name` 走 Node 解析（`main`/`exports`），与文件是否由 TS 编译无关；`dist/index.js` 只要被 `main`/`exports["."]` 指到即可 | `host-plugin.md:9-27`（清单示例）；本仓库以 `link:F:/dev/GitHub/dsh-async-compaction` 挂载（profile `C:\Users\q1325\.dsh\profiles\web\package.json:7`），行引用在同目录 `cordis.patch.yml:544-545` |
 | `Config` | 运行期 schemastery 对象；激活时由 Loader 校验该行 `config`，插件页/设置页表单由该 schema 生成 → 编译不改变任何行为 | `host-plugin.md:57-64`；本仓库 `src/config-schema.js:14` + `src/config.js:237-273`（可选 schemastery，解析不到则 `undefined`，自己校验） |
 | `.volatile()` | 声明为 volatile 的字段在 `apply` 里是 `{ get() }` 引用，Loader 发 `loader/volatile-update` 原地更新、不重启插件 | `host-plugin.md:77`；本仓库 `src/config.js:179-201`（`unwrapConfigRefs`）与 `index.js:60-70` |
 | patch / bundle | `dsh.bundle.patch` + `cordis.patch.yml` 纯文本，与编译无关 | `host-plugin.md:9-27`；`cordis.patch.yml:7-25` |
@@ -71,7 +71,7 @@
 | 契约点 | 事实 | 证据（文件:行） |
 |---|---|---|
 | 产物形状 | 一个**经典脚本**（不能有顶层 `import`/`export`），顶层调用 `window.__ModuleLoader__.load({ id, factory })`；`factory(require) → exports` 在首次 require 时惰性求值并被缓存 | 该文件 `:42-56` 注释、`:521-541`（queue 模式实现） |
-| id | 必须等于包名（本仓库 `client.js:36` `id: '@local/dsh-pre-compact'`；loader 用 `exports["./client"]` 找文件） | `:200` `clientExportOf`、`:783` `resolveMeta` |
+| id | 必须等于包名（本仓库 `client.js:36` `id: 'dsh-async-compaction'`；loader 用 `exports["./client"]` 找文件） | `:200` `clientExportOf`、`:783` `resolveMeta` |
 | `exports["./client"]` | 可以是任意相对路径（含子目录），字符串或 `{ default: string }`；编译到 `./dist/client.js` 完全合法 | `:200-210` |
 | `dsh.client` 字段 | `platform`(必填 string) / `immediately`(boolean) / `inject`(string[]) / `external`(string[]) 严格校验，非法值直接抛错 | `:86-100` `parseDshClient` |
 | `external` 语义 | **只是"其它插件的 client 行"**，且不许写自己的包名；React 属于 baseline 模块表，**不需要也不允许**写进 external | `:472-494`（"a row must not declare its own package"）；本仓库只声明了 `inject`（`package.json:32-38`） |
@@ -231,7 +231,7 @@ effects registered: 1 | disposers: 1
 ### 4.3 推荐目录与配置（可落地模板）
 
 ```
-dsh-pre-compact/
+dsh-async-compaction/
 ├─ src/                      # Host TS 源（原 src/*.js + index.js 迁入）
 │  ├─ index.ts               # 原 index.js
 │  ├─ config.ts  config-schema.ts  coordinator.ts  ...

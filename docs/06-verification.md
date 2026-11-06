@@ -1,7 +1,7 @@
 # 06 · 实测验证
 
 > 本文只记录**实际运行并观察到**的结果。每条附命令、观测位置或会话日志证据；未验证项集中在 §7 诚实列出。
-> 验证对象：`F:\dev\GitHub\dsh-pre-compact`（工作树，未提交），DSH Desktop 0.2.2-rc.1。
+> 验证对象：`F:\dev\GitHub\dsh-async-compaction`（工作树，未提交），DSH Desktop 0.2.2-rc.1。
 
 ---
 
@@ -13,7 +13,7 @@
 | DSH 版本 / 安装形态 | `@deepseek-ai/dsh-desktop` 0.2.2-rc.1（`dshBuildCommit=c59d10aff167ad7eefead4b3a9082fb57c8fbfe8`），Electron asar：`D:\SOFT\tools\dsh\resources\app.asar` |
 | Web GUI | `http://127.0.0.1:3080` |
 | profile | `web`（`C:\Users\q1325\.dsh\profiles\web`），pnpm `nodeLinker: hoisted` |
-| 插件安装形态 | `plugin_manager install_bundle` 传入绝对路径 `F:\dev\GitHub\dsh-pre-compact` → profile 依赖 `@local/dsh-pre-compact 0.1.0 <- F:\dev\GitHub\dsh-pre-compact`（link），Loader 行 `include:pre-compact`，`fiberPhase=active` |
+| 插件安装形态 | `plugin_manager install_bundle` 传入绝对路径 `F:\dev\GitHub\dsh-async-compaction` → profile 依赖 `dsh-async-compaction 0.1.0 <- F:\dev\GitHub\dsh-async-compaction`（link），Loader 行 `include:pre-compact`，`fiberPhase=active` |
 | Node 版本 | Host 运行时 `24.21.0`；本机测试 `22.17.1` |
 | 实机测试模型 | `magpie` / `deepseek/deepseek-flash`；`contextWindow=1,048,576`，请求 `maxTokens=393,216` |
 | 原生压缩触发位置（按公式手算） | `min(1,048,576×0.8, 1,048,576−393,216−65,536)=589,824`（56.3%），因此该模型上**默认 70% 固定阈值会被 `autoAdjustFixedThreshold` 下调**，否则预压缩永远晚于原生 |
@@ -51,7 +51,7 @@
 ### 2.3 原始输出（结尾统计）
 
 ```
-$ cd F:\dev\GitHub\dsh-pre-compact && node --test
+$ cd F:\dev\GitHub\dsh-async-compaction && node --test
 1..273
 # tests 273
 # pass 273
@@ -79,7 +79,7 @@ $ cd F:\dev\GitHub\dsh-pre-compact && node --test
 | 操作 | 让子代理持续读取大文件，使 token 增长越过临时阈值（`0.1×1,048,576≈104,857`） |
 | 期望 | 后台摘要 → 安全边界原子提交 4 条事件；agent 继续执行；期间新增消息保留 |
 | 实际 | 会话 `9d07cd4f-04f9-48b8-bccd-bea2811791e2` 的持久化日志中出现 **3 次完整压缩事务**（全部由本插件写入；原生压缩一次未触发） |
-| 证据 | 会话日志（`C:\Users\q1325\.dsh\sessions\--F-dev-GitHub-dsh-pre-compact--\9d07cd4f-04f9-48b8-bccd-bea2811791e2\session.v4.jsonl.zstd`，用 `node scripts/inspect-session.mjs 9d07cd4f-04f9-48b8-bccd-bea2811791e2` 解析）：<br>`seq 67 compaction/start {compactionId:1280c4b5-…, turn:1}` → `seq 68 compaction/summary {shadowedRange:{10,14}, shadowedSeqs:[10,11,12,13,14], shadowedTokenCount:2174, provider:magpie, model:deepseek/deepseek-flash}` → `seq 69 user/message replace 10–14 {source.kind:"compact-checkpoint", sourceEventSeqs:[67,68,10,11,12,13,14]}` → `seq 70 compaction/end`（同一 turn） |
+| 证据 | 会话日志（`C:\Users\q1325\.dsh\sessions\--F-dev-GitHub-dsh-async-compaction--\9d07cd4f-04f9-48b8-bccd-bea2811791e2\session.v4.jsonl.zstd`，用 `node scripts/inspect-session.mjs 9d07cd4f-04f9-48b8-bccd-bea2811791e2` 解析）：<br>`seq 67 compaction/start {compactionId:1280c4b5-…, turn:1}` → `seq 68 compaction/summary {shadowedRange:{10,14}, shadowedSeqs:[10,11,12,13,14], shadowedTokenCount:2174, provider:magpie, model:deepseek/deepseek-flash}` → `seq 69 user/message replace 10–14 {source.kind:"compact-checkpoint", sourceEventSeqs:[67,68,10,11,12,13,14]}` → `seq 70 compaction/end`（同一 turn） |
 | 原子性证据 | 上述 4 条事件的 `time` 依次为 `10:45:04.691 / .692 / .692 / .694`（**3 ms 内、无 await 间隙**），与"摘要已在后台完成、提交只是同步四连写"的设计一致 |
 | 摘要成本证据 | `compaction/summary.usage = {inputTokens:479, cacheReadTokens:17280, outputTokens:885, totalTokens:18644}` —— 摘要调用复用了会话前缀缓存，不计入主上下文 |
 | 增量合并证据 | 第一次压缩后，会话继续 `step/start(71)`、追加 `agent-instructions/runtime-context/skill-catalog` 等新消息并继续读文件；随后又发生两次压缩（`range 69–20`、`range 82–25`），每次只替换旧区间、新消息全部保留 |
@@ -124,8 +124,8 @@ $ cd F:\dev\GitHub\dsh-pre-compact && node --test
 | Host 侧证据 | `node --test` 的统计以 `npm test` 实跑为准；其中 `test/client.test.js` 断言 **13 字段/5 分组**、四类注册（设置卡片 + composer 指示器 + 会话头部按钮 + 侧边栏 tab/body）、`describeIndicator` 五态映射、1.2s 轮询/隐藏标签页/卸载清理、保存/放弃/恢复默认等；`test/visual-status.test.js` 覆盖状态聚合、优先级、8s 窗口、400/403、路由注册/注销。`node scripts/smoke.mjs`、`smoke-manual.mjs`、`smoke-config-live.mjs`、`smoke-client.mjs` 均通过 |
 | volatile 证据 | `node scripts/smoke-config-live.mjs` → `LIVE CONFIG SMOKE OK`：初始触发点 `700,000`；把 `fixedThreshold` 从 0.7 改为 0.4 并触发 `loader/volatile-update` 后 `400,000`；`enabled=false` 后 status 显示 paused；日志出现 `configuration updated`。即 **Host 侧不重启即可生效**已被离线验证 |
 | 插件加载 | `plugin_manager` 重载后 Loader 行 `include:pre-compact` 为 `active`（Host 半）；client 半由 `package.json` 的 `exports["./client"]` + `dsh.client` 声明，Host 的 client-modules 已据 manifest 合成 |
-| Client graph 证据 | 公开路由 `GET /plugins/events` 的 graph 帧包含 `{"id":"@local/dsh-pre-compact","url":"plugins/??@local/dsh-pre-compact/client.js&rev=<12hex>","inject":["@deepseek-ai/dsh-client-ui-plugin-manager"],"immediately":true}`；按 graph 的 URL 抓取得到 **38,492 字节**的 bundle，内含 `__ModuleLoader__` 加载调用与 `plugins.bundle.config` 注册代码（rev 与按 `client.js` 的 mtime/ctime/size 计算的 `plugin-artifact` 帧哈希一致） |
-| 实际 | **未由 Lead 验证浏览器渲染**：没有在真实页面看到卡片、点击保存、观察 UI 反馈或刷新后的持久化；`cordis_inspect_query client/Slots` 在当前已连接页面里查询 `plugins.bundle.config` 的 keyDomain 尚未包含 `@local/dsh-pre-compact`（该页面在本功能合入前启动；同槽内 `dsh-read-image-compress` 也未出现，说明注册是随配置命名空间被服务/页面打开而惰性发生的，不能据此判定失败） |
+| Client graph 证据 | 公开路由 `GET /plugins/events` 的 graph 帧包含 `{"id":"dsh-async-compaction","url":"plugins/??dsh-async-compaction/client.js&rev=<12hex>","inject":["@deepseek-ai/dsh-client-ui-plugin-manager"],"immediately":true}`；按 graph 的 URL 抓取得到 **38,492 字节**的 bundle，内含 `__ModuleLoader__` 加载调用与 `plugins.bundle.config` 注册代码（rev 与按 `client.js` 的 mtime/ctime/size 计算的 `plugin-artifact` 帧哈希一致） |
+| 实际 | **未由 Lead 验证浏览器渲染**：没有在真实页面看到卡片、点击保存、观察 UI 反馈或刷新后的持久化；`cordis_inspect_query client/Slots` 在当前已连接页面里查询 `plugins.bundle.config` 的 keyDomain 尚未包含 `dsh-async-compaction`（该页面在本功能合入前启动；同槽内 `dsh-read-image-compress` 也未出现，说明注册是随配置命名空间被服务/页面打开而惰性发生的，不能据此判定失败） |
 | 未验证项 | ① 真实浏览器是否渲染卡片（含语言、主题、窄屏布局）；② 点击“保存”后 UI 提示与 Host `loader/volatile-update` 的真实链路；③ `status` 是否立即反映新阈值（Host 侧 smoke 已覆盖逻辑，GUI 未覆盖）；④ 保存失败/revision 冲突/只读状态的 UI 表现；⑤ 刷新页面/重开 bundle 后卡片出现与持久化；⑥ linked bundle manifest 更新后是否需要 entry restart |
 | 结论 | **Host 侧（单测 + volatile 冒烟）通过；真实浏览器渲染与保存未验证**，发布说明需注明“装好后请刷新页面并自行确认卡片” |
 

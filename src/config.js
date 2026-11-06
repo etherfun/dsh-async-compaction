@@ -3,7 +3,7 @@
  *
  * Every field is a plain JSON value so the config can live in
  * `cordis.patch.yml` (and be edited through the host's config editor).
- * @module dsh-pre-compact/config
+ * @module dsh-async-compaction/config
  */
 
 import { clamp, isFiniteNumber, numberOr } from './util.js'

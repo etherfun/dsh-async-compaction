@@ -7,7 +7,7 @@
  * the token budget it was planned against. Later appends are intentionally NOT
  * part of the snapshot — the commit only replaces this range and leaves later
  * messages in place.
- * @module dsh-pre-compact/snapshot
+ * @module dsh-async-compaction/snapshot
  */
 
 import { randomUUID } from 'node:crypto'

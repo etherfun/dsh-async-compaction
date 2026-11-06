@@ -40,7 +40,7 @@ test('the plugin registers /precompact with the host command registry', () => {
   assert.equal(definitions.length, 1)
   const definition = definitions[0]
   assert.equal(definition.name, 'precompact')
-  assert.equal(definition.definitionId, 'dsh-pre-compact/command')
+  assert.equal(definition.definitionId, 'dsh-async-compaction/command')
   assert.equal(typeof definition.description, 'string')
   assert.equal(typeof definition.handler, 'function')
   ctx.dispose()

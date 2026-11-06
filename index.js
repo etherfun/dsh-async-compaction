@@ -8,7 +8,7 @@
  *
  * This entry file only wires host events and the `/precompact` command; the
  * runtime lives in `src/coordinator.js`.
- * @module dsh-pre-compact
+ * @module dsh-async-compaction
  */
 
 import { resolveConfig, unwrapConfigRefs } from './src/config.js'
@@ -190,7 +190,7 @@ function registerStatusCommand(ctx, runtime) {
     return
   }
   const disposer = commands.register({
-    definitionId: 'dsh-pre-compact/command',
+    definitionId: 'dsh-async-compaction/command',
     name: 'precompact',
     description: 'Inspect or control background context pre-compaction',
     /** @param {any} invocation */

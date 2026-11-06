@@ -11,7 +11,7 @@
  * Because those appends happen in one synchronous turn, no request or tool call
  * can observe a half-applied compaction, and the durable lock bracket can never
  * cross a turn boundary.
- * @module dsh-pre-compact/commit
+ * @module dsh-async-compaction/commit
  */
 
 import { createCheckpointMessage, toolPairingBalancedAfter, toolPairingBalancedBefore } from './surface.js'

@@ -1,4 +1,4 @@
-# dsh-pre-compact
+# dsh-async-compaction
 
 **后台上下文预压缩 · Background context pre-compaction for DeepSeek Harness**
 
@@ -6,7 +6,7 @@
 
 > **契约边界**：本插件只接管 **“何时压缩 + 异步执行”**——触发判定、快照、后台摘要调度、安全边界原子提交，以及手动 `/compact` 的异步化。**“如何压缩”仍归当前压缩后端**：保留区间、摘要模型、质量门槛、参与压缩的模型范围都由后端决定。这样不会和其它压缩插件/后端升级冲突。
 
-- 包名：`@local/dsh-pre-compact`（本地 bundle，不发布 npm）
+- 包名：`dsh-async-compaction`（本地 bundle，不发布 npm）
 - 形态：Host 插件 + bundle（`cordis.patch.yml`）+ 浏览器端三个界面（设置卡片 / composer token 旁指示器 / 右侧边栏「预压缩」面板）
 - 运行时依赖：**无**（Host 只用 `node:` 内置与自身文件；client 只 `require('react')`）
 
@@ -34,7 +34,7 @@
 或在 profile `package.json` 中把本包作为依赖并让 bundle 的 patch 生效：
 
 ```json
-{ "dependencies": { "@local/dsh-pre-compact": "link:F:/path/to/dsh-pre-compact" } }
+{ "dependencies": { "dsh-async-compaction": "link:F:/path/to/dsh-async-compaction" } }
 ```
 
 3. 重启 / 重载 DSH，打开 **设置 → 插件** 即可看到「后台预压缩」卡片；会话头部出现「预压缩」按钮。

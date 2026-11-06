@@ -5,7 +5,7 @@
  * answers the newest records as JSON. It exposes exactly what the host logger
  * received (message + sanitized fields), never message content, and is meant
  * for local debugging through the Web GUI.
- * @module dsh-pre-compact/logs-endpoint
+ * @module dsh-async-compaction/logs-endpoint
  */
 
 import { jsonResponse, sameOriginAllowed } from './visual-status.js'

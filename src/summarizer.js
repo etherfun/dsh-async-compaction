@@ -9,7 +9,7 @@
  *
  * Fallback path (only when a backend without that hook is mounted): stream the
  * same instruction through `ctx.llm.stream()` and assemble text ourselves.
- * @module dsh-pre-compact/summarizer
+ * @module dsh-async-compaction/summarizer
  */
 
 import { COMPACTION_INSTRUCTION, createCheckpointMessage } from './surface.js'

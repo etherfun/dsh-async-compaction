@@ -5,7 +5,7 @@
  * series and the applied-compaction history the runtime keeps per session, plus
  * the current trigger/threshold figures. The session-view dashboard polls this;
  * the tiny composer indicator keeps using `/api/pre-compact/status`.
- * @module dsh-pre-compact/history-endpoint
+ * @module dsh-async-compaction/history-endpoint
  */
 
 import { jsonResponse, sameOriginAllowed } from './visual-status.js'

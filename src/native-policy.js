@@ -7,7 +7,7 @@
  * cannot be read (a different backend, or a future version), the plugin falls
  * back to the documented defaults, and `nativeThreshold` in the plugin config
  * lets the user override the ratio explicitly.
- * @module dsh-pre-compact/native-policy
+ * @module dsh-async-compaction/native-policy
  */
 
 import { isRecord } from './util.js'

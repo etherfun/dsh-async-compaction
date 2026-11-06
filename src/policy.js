@@ -11,7 +11,7 @@
  *
  * All functions here are pure: they take measurements and config, and return a
  * decision with the full derivation for logging.
- * @module dsh-pre-compact/policy
+ * @module dsh-async-compaction/policy
  */
 
 import { clamp, round } from './util.js'

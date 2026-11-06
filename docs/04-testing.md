@@ -5,7 +5,7 @@
 ## 运行
 
 ```powershell
-cd F:\dev\GitHub\dsh-pre-compact
+cd F:\dev\GitHub\dsh-async-compaction
 node --test              # 或 npm test：273 个用例（16 个 Host 测试文件 243 + fake-harness 自动发现 1 + client 29）
 node --test test/client.test.js   # 只跑设置卡片 + composer 指示器 + 右侧边栏面板（29 用例）
 node --test test/visual-status.test.js # 只跑状态资源（13 用例）

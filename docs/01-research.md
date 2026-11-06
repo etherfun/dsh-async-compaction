@@ -533,7 +533,7 @@ view  = { contextWindow?, pressureTokens?, projectedTokens = max(0, pressureToke
 9. **`auto:false` 时是否仍响应 `context-overflow`**：从 `BASIC:828` 看整个自动注册块都不挂载 → `[推断]` 已关闭，需实测。
 10. **`SessionStartSource='clear'` 的产生方**：解包内找不到写入点。
 11. **`ctx.sessionProjections.register` 的 host-only unit 是否随 cache 落盘**：服务描述称"every persisted unit"，未实测（本插件未使用投影持久化）。
-12. **plugin-manager 安装带本地绝对路径的 bundle**：已实测可行——`plugin_manager install_bundle` 传绝对路径 `F:\dev\GitHub\dsh-pre-compact` 会把它装成 profile 的 link 依赖（`@local/dsh-pre-compact 0.1.0 <- F:\dev\GitHub\dsh-pre-compact`），Loader 行 `include:pre-compact` 的 `fiberPhase=active`（见 [docs/06-verification.md](06-verification.md) §1）。
+12. **plugin-manager 安装带本地绝对路径的 bundle**：已实测可行——`plugin_manager install_bundle` 传绝对路径 `F:\dev\GitHub\dsh-async-compaction` 会把它装成 profile 的 link 依赖（`dsh-async-compaction 0.1.0 <- F:\dev\GitHub\dsh-async-compaction`），Loader 行 `include:pre-compact` 的 `fiberPhase=active`（见 [docs/06-verification.md](06-verification.md) §1）。
 13. **`ctx.jobs` 是否适合承载摘要任务**：本插件未使用（自己管理 AbortController），是否注册作业可获得 UI 可见性未评估。
 14. **后端实例 `compactNow` 的跨版本稳定性**：manual hook 依赖它（`dsh-command-compact` 固定调用 `ctx.compaction.compactNow`），但它不是契约 API；后端冻结实例、改名或改为其它入口时，wrapper 会静默不接管/退化为原生（日志见 [docs/05](05-limitations.md) §1.6）。
 

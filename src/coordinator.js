@@ -10,7 +10,7 @@
  *
  * Nothing in here awaits a model call from an agent boundary: hooks only do
  * synchronous work plus fire-and-forget sampling/starting.
- * @module dsh-pre-compact/coordinator
+ * @module dsh-async-compaction/coordinator
  */
 
 import { randomUUID } from 'node:crypto'

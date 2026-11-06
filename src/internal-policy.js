@@ -7,7 +7,7 @@
  * without changing the outcome much. The three remaining adaptive settings are
  * `minThreshold`, `maxThreshold` and `fallbackThreshold` (the clamp window and
  * the no-data fallback); everything else is a fixed, documented default.
- * @module dsh-pre-compact/internal-policy
+ * @module dsh-async-compaction/internal-policy
  */
 
 /** Safety padding added to the predicted context growth (tokens). */
