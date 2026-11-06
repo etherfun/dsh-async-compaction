@@ -26,9 +26,12 @@ import { round } from './util.js'
  * @param {boolean} [input.manual] - an explicit `/compact`-style request: keep
  *   the native manual tail budget (only the last surface node) instead of the
  *   backend's automatic retention policy
+ * @param {number} [input.preserveFromSeq] - manual requests made while a step is
+ *   running keep everything from this event seq onward (the in-flight step) and
+ *   compact only the older history, i.e. the baseline is the previous step
  * @returns {{ snapshot: Record<string, any> } | { skip: string, detail?: Record<string, any> }}
  */
-export function createSnapshot({ session, measurement, config, native, route, triggerTokens, now = Date.now(), manual = false }) {
+export function createSnapshot({ session, measurement, config, native, route, triggerTokens, now = Date.now(), manual = false, preserveFromSeq }) {
   const nodes = session.surface.nodes
   if (!Array.isArray(nodes) || nodes.length === 0) return { skip: 'empty-surface' }
   if (native.known !== true || !(native.contextWindow > 0)) return { skip: 'no-context-capacity' }
@@ -37,7 +40,19 @@ export function createSnapshot({ session, measurement, config, native, route, tr
   // the running backend retains. A manual `/compact` keeps the native behavior
   // of retaining only the last surface node (the selector expands for tool
   // pairs), exactly like `compactNow` does.
-  const retainTokens = manual ? 0 : native.retainTokens ?? 0
+  let retainTokens = manual ? 0 : native.retainTokens ?? 0
+  let preservedFromStep = false
+  if (manual && Number.isFinite(preserveFromSeq)) {
+    const cutoffIdx = nodes.findIndex((seq) => seq >= preserveFromSeq)
+    if (cutoffIdx !== -1) {
+      const firstIdx = systemHead(session, nodes[0]) === undefined ? 0 : 1
+      if (cutoffIdx <= firstIdx) return { skip: 'no-compactable-range' }
+      // Keep the whole in-flight step: the selector stops exactly at its first
+      // node when the retained budget is the tail's own price.
+      retainTokens = measurement.nodes.slice(cutoffIdx).reduce((total, node) => total + node.tokens, 0)
+      preservedFromStep = true
+    }
+  }
   const range = selectCompactableRange(session, measurement, retainTokens)
   if (range === null) return { skip: 'no-compactable-range' }
 
@@ -87,6 +102,7 @@ export function createSnapshot({ session, measurement, config, native, route, tr
 
     hasSystemHead: head !== undefined,
     manual,
+    preserveFromSeq: preservedFromStep ? preserveFromSeq : null,
     input,
     route,
     policy: Object.freeze({

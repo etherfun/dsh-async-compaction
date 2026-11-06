@@ -19,7 +19,7 @@
 | 原生压缩触发位置（按公式手算） | `min(1,048,576×0.8, 1,048,576−393,216−65,536)=589,824`（56.3%），因此该模型上**默认 70% 固定阈值会被 `autoAdjustFixedThreshold` 下调**，否则预压缩永远晚于原生 |
 | 挂载情况 | `compaction-basic` 在 preset isolate 组内（host 行 `enabled=false`）；`token-meter` host active；`tool-result-pruner` preset 内；`image-offload` host active；`smart-compaction` active（未与本插件冲突） |
 | 实机测试配置 | **临时（当时的配置面，部分键现已删除）**：`triggerMode=fixed`、`fixedThreshold=0.1`、`modelAllowlist=['deepseek/deepseek-flash']`、`minInterval=10000`、`growthSamplingInterval=2000`、`logLevel=debug`；测试后已恢复生产默认（`fixedThreshold=0.7`），并重新加载插件。注意：`modelAllowlist` 在后续"边界收敛"中已从本插件移除，旧配置会被静默忽略（当时实机行为不能代表当前配置面） |
-| 手动压缩 hook 配置（新增，未参与上述实机） | `hookManualCompact=true`（`cordis.patch.yml` 默认）；手动保留区间固定 `retainTokens=0`；**没有** `manualCompactRetainTokens` / `manualCompactTimeoutSeconds` 配置（均已删除）。**该功能在实机测试之后才合入**：实机未点击过 `/compact`，也没有观察 `hooked the manual compaction entry point` / `Manual request:` 行 |
+| 手动压缩 hook 配置（新增，未参与上述实机） | `hookManualCompact=true`（`cordis.patch.yml` 默认）；手动默认保留区间 `retainTokens=0`，**运行中 step 以 `currentStepStartSeq` 为基线**；**没有** `manualCompactRetainTokens` / `manualCompactTimeoutSeconds` 配置（均已删除）。**该功能在实机测试之后才合入**：实机未点击过 `/compact`，也没有观察 `hooked the manual compaction entry point` / `Manual request:` 行 |
 | 浏览器端 client half（新增，未参与上述实机） | `package.json` 有 `exports["./client"]` 与 `dsh.client`（`platform:"web"`、`immediately:true`、`inject:["@deepseek-ai/dsh-client-ui-plugin-manager"]`），profile 为 link 安装。**设置卡片与 composer 状态指示器在实机测试之后才合入**：未在真实浏览器打开/渲染/保存/轮询过；Host 侧由 `test/client.test.js`、`test/visual-status.test.js` 覆盖 |
 | 状态提示接口（新增，未参与上述实机） | `index.js` 在 `ctx.inject(['webServer'])` 成功时注册 `GET /api/pre-compact/status`（`src/visual-status.js`）与 `GET /api/pre-compact/logs`（`src/logs-endpoint.js`）；无 `webServer` 则不注册。实机测试早于该功能，**未在真实 GUI 观察指示器**，也未实测这两个 HTTP 路由（Host 侧单测覆盖 resource/JSON/400/403/注销） |
 | 调试日志（新增，未参与上述实机） | 第 17 个配置 `logBufferSize`（默认 500，0=关闭并清空，volatile，不进卡片）；`src/log.js` 双写（console 按 `logLevel`、缓冲记录所有级别）；实机测试早于该功能，未验证真实会话缓冲/命令输出/端点 |
@@ -37,7 +37,7 @@
 |---|---|
 | 命令 | `node --test`（**注意**：本机 Node 22.17 在 Windows 上用 `node --test test/` 会把目录当模块入口而报 `Cannot find module ...\test`；`package.json` 的 `test` 脚本已改为 `node --test`） |
 | 结果 | 见 §2.3 的最终统计（由 `test/` 下的用例实测得出） |
-| 覆盖模块 | `src/config.js`（**16 键**默认值、逐键越界回退、min>max 交换、`unwrapConfigRefs`、累计 19 个已删除旧键被丢弃（含 `maxConcurrent`）、`logBufferSize` 非负回退）、`src/internal-policy.js`（内部常量被 policy 使用）、`src/policy.js`（固定阈值、自适应降级、min/max 夹取、内部 EMA/burst/窗口常量、`no-capacity`、`routeUsable`）、`src/native-policy.js`（后端全局 + per-model 策略、保留合并顺序）、`src/surface.js`（工具对平衡、尾部保留选择、node0 system 排除、空 surface）、`src/commit.js`（`CommitError` 各 code、`MIN_REDUCTION_RATIO`、原子写、增量保留）、协调器状态机（**单会话串行/跨会话并行、无全局并发闸门**、最小间隔、dispose 中断、边界策略、手动请求排队/取消/重试/无 deadline/**supersede 自动工作**/**flush**、`applyConfig` 就地更新）、`src/manual-hook.js`（安装/还原/delegate/busy/changed 重试/generation 守卫）、端到端（后台摘要 → READY → pre-step 落地；dryRun 不写事件）、**`client.js`（离线渲染设置卡片 + composer 指示器 + 侧边栏按钮/面板：注册契约、13 字段/5 分组、边界说明、单位换算、校验、保存/放弃/恢复默认、五态映射/轮询、按步图表/统计/尺寸）**、**`src/visual-status.js`（状态聚合/优先级/8s 窗口/400/403/路由注册注销）**、**`src/log.js`（双写/环形缓冲/sanitize/snapshot）与 `src/logs-endpoint.js`（参数/200/400/403/注销）**、**`src/history-endpoint.js`（samples/history 白名单/空会话/400/403/注销）与右侧边栏面板（`sidebarRightTabs`/`sidebar.right.pane.tab`、按步图表/空态/轮询）** |
+| 覆盖模块 | `src/config.js`（**16 键**默认值、逐键越界回退、min>max 交换、`unwrapConfigRefs`、累计 19 个已删除旧键被丢弃（含 `maxConcurrent`）、`logBufferSize` 非负回退）、`src/internal-policy.js`（内部常量被 policy 使用）、`src/policy.js`（固定阈值、自适应降级、min/max 夹取、内部 EMA/burst/窗口常量、`no-capacity`、`routeUsable`）、`src/native-policy.js`（后端全局 + per-model 策略、保留合并顺序）、`src/surface.js`（工具对平衡、尾部保留选择、node0 system 排除、空 surface）、`src/commit.js`（`CommitError` 各 code、`MIN_REDUCTION_RATIO`、原子写、增量保留）、协调器状态机（**单会话串行/跨会话并行、无全局并发闸门**、最小间隔、dispose 中断、边界策略、手动请求排队/取消/重试/无 deadline/**supersede 自动工作**/**flush**、`applyConfig` 就地更新）、`src/manual-hook.js`（安装/还原/delegate/busy/changed 重试/generation 守卫）、端到端（后台摘要 → READY → pre-step 落地；dryRun 不写事件）、**`client.js`（离线渲染设置卡片 + composer 指示器 + 侧边栏按钮/面板：注册契约、13 字段/5 分组、边界说明、单位换算、校验、保存/放弃/恢复默认、五态映射/轮询、按步图表/统计/尺寸）**、**`src/visual-status.js`（状态聚合/优先级/8s 窗口/400/403/路由注册注销）**、**`src/log.js`（双写/环形缓冲/sanitize/snapshot）与 `src/logs-endpoint.js`（参数/200/400/403/注销）**、**`src/history-endpoint.js`（samples/history 白名单/空会话/400/403/注销）与右侧边栏面板（`sidebarRightTabs`/`sidebar.right.pane.tab`、按步图表/空态/轮询）**、**`src/snapshot.js`（`preserveFromSeq` 基线/区间/tool-pair 回退）与 `step-baseline.test.js`（运行中手动基线/`step-boundary` 落地/无 in-flight 回退）** |
 | 详细失败/通过清单 | `test/REPORT.md`（若存在）；命令输出见 §2.3 |
 
 ### 2.2 静态检查
@@ -52,16 +52,16 @@
 
 ```
 $ cd F:\dev\GitHub\dsh-async-compaction && node --test
-1..273
-# tests 273
-# pass 273
+1..284
+# tests 284
+# pass 284
 # fail 0
 # cancelled 0
 # skipped 0
 # todo 0
 ```
 
-> 最终稳定统计（连跑两次一致）：**273 tests / 273 pass / 0 fail / 0 skipped**（16 个 Host 测试文件 243 + `fake-harness.js` 自动发现 1 + `client.test.js` 29）。结构：`config.test.js`（**16 键** + 19 legacy 静默 + 未知键 warning + `logBufferSize` 回退）、`manual-hook.test.js`（supersede/flush/sourceCommandId/无 agent/无 deadline）、`client.test.js`（**13 字段**/5 分组 + composer 指示器 + 侧边栏面板/steps/统计/尺寸共 29 用例）、`policy.test.js`（**21 用例，含 warm start**）、`native-policy.test.js`（per-model 合并）、`visual-status.test.js`（13 用例）、`log.test.js`（18 用例）、`logs-endpoint.test.js`（10 用例）、`history-endpoint.test.js`（10 用例）、`session-view.test.js`（**14 用例，优先 steps**）。
+> 最终稳定统计（连跑两次一致）：**284 tests / 284 pass / 0 fail / 0 skipped**（18 个 Host 测试文件 254 + `fake-harness.js` 自动发现 1 + `client.test.js` 29）。结构：`config.test.js`（**16 键** + 19 legacy 静默 + 未知键 warning + `logBufferSize` 回退）、`manual-hook.test.js`（supersede/flush/sourceCommandId/无 agent/无 deadline）、`client.test.js`（**13 字段**/5 分组 + composer 指示器 + 侧边栏面板/steps/统计/尺寸共 29 用例）、`policy.test.js`（**21 用例，含 warm start**）、`snapshot.test.js`（**6 用例，preserveFromSeq/基线**）、`step-baseline.test.js`（**5 用例，运行中手动基线**）、`native-policy.test.js`（per-model 合并）、`visual-status.test.js`（13 用例）、`log.test.js`（18 用例）、`logs-endpoint.test.js`（10 用例）、`history-endpoint.test.js`（10 用例）、`session-view.test.js`（**14 用例，优先 steps**）。
 
 覆盖文件：`test/00-smoke.test.js`、`config.test.js`、`policy.test.js`、`surface.test.js`、`commit.test.js`、`lifecycle.test.js`、`e2e.test.js`、`command.test.js`、`summarizer.test.js`、`manual-hook.test.js`、`native-policy.test.js`、`visual-status.test.js`、`log.test.js`、`logs-endpoint.test.js`、`history-endpoint.test.js`、`session-view.test.js`、`client.test.js`，公共 fake 宿主在 `test/fake-harness.js`（按真实 `Session.append` 语义实现，含无损 JSON/undefined 拒绝、surface fold、tool/result 受限重写、node0 保护、重入拒绝；compaction 桩现已支持 native-style `compactNow`）。`client.test.js` 不需要 DOM/浏览器：它用最小 hook 运行时加载 `client.js` 并离线渲染卡片、指示器与侧边栏面板。
 
@@ -111,7 +111,7 @@ $ cd F:\dev\GitHub\dsh-async-compaction && node --test
 | 前置 | `enabled && !dryRun && hookManualCompact`，且后端实例可写（实例方法 `compactNow` 存在、不是冻结对象） |
 | 期望 | 日志出现 `hooked the manual compaction entry point`；`/compact` 不再占用 `runMaintenance`、不再 busy；第一条 `compaction/start` 与 `compaction/end` 由本插件写入且含 `sourceCommandId`；落地后命令显示宿主的 "Compacted N history items…"；abort/暂停/dispose 后结果不会迟到落地；**手动会先取代自动工作、再按手动语义摘要**；提交后 flush（fire-and-forget）；**没有插件级超时**（等待由原生生命周期收敛） |
 | 实际 | **未实机验证**：本次实机测试早于该功能合入，未在真实 GUI 点击 `/compact`，也未观察 hook 日志/命令文本 |
-| 现有证据 | **有专项测试**（37 用例）——`agent/created` 安装 + `agent/pre-step` 兜底、`dispose` 还原原方法、`enabled=false`/`dryRun=true`/`hookManualCompact=false` 三种 delegate、`busy`、已 abort 的 signal、运行中 abort（迟到完成不落盘）、session/agent/plugin dispose、**无插件 deadline**（abort/dispose 收敛）、无区间 resolve `null`、**skip + 无 attached agent → reject `summary`**、`minShadowedTokens` 仅保护自动路径、running agent 在下次 pre-step 落地、**手动取代自动 READY/在途任务（`supersedeAutomaticWork`，日志 `manual request superseded automatic pre-compaction work`）**、`sourceCommandId` 写入结果/三个事件/**checkpoint source**、**手动提交后 fire-and-forget `sessions.flush`**、手动固定 `retainTokens=0` 的激进区间、`/precompact compact` 六种结果、preset 后端、invalidate 不落地过期结果、`changed` 重试一次；`test/fake-harness.js` 提供 native-style `compactNow` 桩。**未在真实 GUI 点击 `/compact`** |
+| 现有证据 | **有专项测试**（37 用例）——`agent/created` 安装 + `agent/pre-step` 兜底、`dispose` 还原原方法、`enabled=false`/`dryRun=true`/`hookManualCompact=false` 三种 delegate、`busy`、已 abort 的 signal、运行中 abort（迟到完成不落盘）、session/agent/plugin dispose、**无插件 deadline**（abort/dispose 收敛）、无区间 resolve `null`、**skip + 无 attached agent → reject `summary`**、`minShadowedTokens` 仅保护自动路径、running agent 在下次 pre-step 落地、**手动取代自动 READY/在途任务（`supersedeAutomaticWork`，日志 `manual request superseded automatic pre-compaction work`）**、`sourceCommandId` 写入结果/三个事件/**checkpoint source**、**手动提交后 fire-and-forget `sessions.flush`**、默认 `retainTokens=0` 的激进区间（运行中 step 用基线）、`/precompact compact` 六种结果、preset 后端、invalidate 不落地过期结果、`changed` 重试一次；`test/fake-harness.js` 提供 native-style `compactNow` 桩。**未在真实 GUI 点击 `/compact`** |
 | 已知差异 | 错误不是宿主 `ManualCompactionError` 类实例（显示本插件 message）；`turn` 可能非 `null`（原生手动恒为 `null`）；`/precompact pause` 会取消手动请求（原生无此概念）；见 [docs/05](05-limitations.md) §1.6/§2.13/§5.6 |
 | 结论 | **单元/集成通过，未实机验证**（发布说明必须保留该项） |
 
@@ -174,6 +174,17 @@ $ cd F:\dev\GitHub\dsh-async-compaction && node --test
 | 未验证项 | ① 真实压缩后 warm start 是否按预期保持上一次阈值；② warm start 被新完整预测替换的时点；③ 模型/配置变化后短暂沿用旧阈值的实际影响；④ `status` 是否暴露足够信息区分 warm start/fallback（当前不打印 `derivation`） |
 | 结论 | **warm start 纯函数与状态机单测通过；真实压缩后取值未验证** |
 
+### 3.11 运行中手动 `/compact` 的 step 基线（**单测通过；真实 GUI 未验证**）
+
+| 项 | 内容 |
+|---|---|
+| 功能 | `step/start` 记录 `state.currentStepStartSeq = event.seq`；step 执行中发起手动请求时，`createSnapshot({manual:true, preserveFromSeq})` 保留该 seq 起的全部 surface 节点、只压缩更早历史；摘要就绪后若 `step/end` 到来，用 `queueMicrotask` 在 `BOUNDARIES.STEP='step-boundary'` 原子落地，会话继续执行；若未就绪则等下一个 `pre-step`；基线在 `step/end`/`turn/start`/`turn/end` 清空；无 in-flight step 回退原生 `retainTokens=0` |
+| Host 侧证据 | `test/snapshot.test.js`（6 用例）：`preserveFromSeq` 基线区间/只压更早历史、cutoff 在首个可压缩节点前 → `no-compactable-range`、tool-pair 回退、无 `preserveFromSeq` 时 retain-0、snapshot 记录 `preserveFromSeq`；`test/step-baseline.test.js`（5 用例）：`step/start` 记录 seq、手动快照使用基线、`step/end` 先于 READY 时在 `step-boundary` 落地、基线清空、无 in-flight step 回退；`manual-hook.test.js` 覆盖手动路径整体生命周期 |
+| 可观测 | `statusFor().currentStepStartSeq`；`history[].boundary` 可为 `step-boundary` |
+| 实际 | **未在真实 GUI 验证运行中 `/compact`**：没有在真实 step 执行中点击/输入 `/compact` 并观察 `step-boundary` 落地；也没有验证真实 `step/start` 的 `event.seq` 与 surface 节点 seq 的对应关系 |
+| 未验证项 | ① 真实 GUI 运行中 `/compact` 是否在 `step/end` 落地且会话继续；② 真实 `step/start` 的 seq 与 surface seq 对齐；③ 摘要未就绪时确实等下一个 `pre-step`；④ 插件中途加载（无 `currentStepStartSeq`）回退 retain-0；⑤ 真实 tool-pair 跨基线时的 cutoff 回退 |
+| 结论 | **`preserveFromSeq`/`step-boundary` 的区间与状态机单测通过；真实 GUI 运行中手动压缩未验证** |
+
 ---
 
 ## 4. 安全不变量验证
@@ -186,14 +197,14 @@ $ cd F:\dev\GitHub\dsh-async-compaction && node --test
 | I4 锁互斥 | 单测：`compaction/start` 未配对时提交被 `locked` 拒绝；实机：没有与原生并发压缩的情况 | 通过（实机为避开而非竞争） |
 | I5 generation 校验 | 单测：摘要期间注入 replace → `surface-replaced` / `span-repriced`，结果丢弃 | 通过 |
 | I6 原生兜底 | 实机：原生压缩从未被改动或卸载（`include:compaction-basic` 仍由 preset 挂载）；单测：插件 dispose 后无残留写入 | 通过 |
-| I7 保留区间跟随其后端 | 单测：`resolveNativePolicy()` 读后端 `retainTokens`（含 `modelPolicies` 的 per-model 覆盖；读不到按 `retainRatio=0.16` 推导并夹到阈值 90%）；手动路径固定 `retainTokens=0`；实机：压缩后追加的消息仍在 surface（与 I16 一起验证） | 通过（单测；实机未跨后端对比） |
+| I7 保留区间跟随其后端 | 单测：`resolveNativePolicy()` 读后端 `retainTokens`（含 `modelPolicies` 的 per-model 覆盖；读不到按 `retainRatio=0.16` 推导并夹到阈值 90%）；手动默认 `retainTokens=0`（运行中 step 用 `preserveFromSeq` 基线）；实机：压缩后追加的消息仍在 surface（与 I16 一起验证） | 通过（单测；实机未跨后端对比） |
 | I8 事件类型 | 实机日志只出现 `compaction/start|summary|end` + `user/message(replace)`，无自造类型；会话重启读路径未报"unknown event type" | 通过 |
 | I9 不重入 | 单测：fake session 在 append 发布期间重入会抛错；插件在 `session/event` 里只读、不 append | 通过 |
 | I10 不阻塞 | 设计上 hook 内不 await 模型；实机证据：压缩事务 3 ms 完成，且 agent 在压缩前后持续 step（每个 step 间隔约 19 s 是模型/工具耗时，不是摘要耗时） | 通过（未做精确 hook 墙钟埋点） |
 | I11 幂等 + 手动取代自动 | 单测：同一会话已有 active/ready 时不重复启动；手动先 `supersedeAutomaticWork()`（丢弃自动 READY / abandon+abort 在途），再启动全新手动摘要 | 通过（单测） |
 | I12 收缩保证 | 自动路径：`framedTokens < shadowedRouteTokens` 且 `reduction ≥ MIN_REDUCTION_RATIO`（内部常量 **0.05**，不可配置）；手动路径只要求更小；单测：`not-smaller` / `small-reduction` 拒绝；实机 3 次摘要字符数均远小于被遮蔽区间 | 通过 |
 | I13 节流/降级 | 单测：`minInterval`、`retriggerFloor` 生效；跨会话无全局节流；自适应数据不完整时 warm start 优先、无历史才 fallback；fixed 不读 warm start | 通过（单测；真实压缩后取值未验证） |
-| I14 手动请求不占维护窗口 + 语义独立 | 单测（`test/manual-hook.test.js`）：`compactNow` wrapper 返回 Promise、后台摘要、边界落地后 resolve 宿主形状 `CompactionResult`；手动不复用自动 READY/在途，按 `retainTokens=0` 重新摘要（可能多一次摘要）；**未在真实 GUI 点击** | 通过（单测）/未实机 |
+| I14 手动请求不占维护窗口 + 语义独立 | 单测（`test/manual-hook.test.js`）：`compactNow` wrapper 返回 Promise、后台摘要、边界落地后 resolve 宿主形状 `CompactionResult`；手动不复用自动 READY/在途，按“step 基线或 `retainTokens=0`”重新摘要（可能多一次摘要）；**未在真实 GUI 点击** | 通过（单测）/未实机 |
 | I15 最小收益门 | 单测：被压缩区间路由价 < `minShadowedTokens` → `range-too-small` 跳过（不付摘要成本） | 通过 |
 | I16 固定阈值可落地 | 单测：`autoAdjustFixedThreshold` 在"用户阈值 ≥ 原生阈值"时下调到 `native − max(4096, 2%·native)`（下限 5%·C）；关闭时保持用户值；实机手算：1,048,576 窗口 + 393,216 输出预留 → 原生 589,824（56.3%），默认 70% 会被下调 | 通过 |
 | I17 抗抖动 | 单测：提交/干跑后设置 `retriggerFloor`，同一压力水平不会重复起任务；重启用例按 `retrigger-floor` 断言 | 通过 |
@@ -205,6 +216,7 @@ $ cd F:\dev\GitHub\dsh-async-compaction && node --test
 | I23 可视化数据有界/只读（steps 例外） | 单测（`history-endpoint.test.js`/`session-view.test.js`/client）：samples 120（回退）/history 30 有界、**steps 全量**、仅成功提交、current **20 字段**白名单、未知会话三空数组、端点 200/400/403/注销、优先 steps 画全部步骤/缺失回退/最多 6 刻度/记录表步骤、**统计五项与 `—`**、**紧凑尺寸**、**sidebar 注册/缺失跳过** | 通过（单测；真实浏览器/超长序列未验证） |
 | I24 并发：单会话串行、跨会话并行 | 单测（`lifecycle.test.js` 更新中）：同一会话不会并行两份摘要；无全局 `maxConcurrent`/`activeTasks`；不同会话各自触发互不阻塞 | 通过（单测；真实多会话并发未实机） |
 | I25 warm start 有界且不替代完整预测 | 单测（`policy.test.js`）：只保留最后一次 `dataComplete` 目标；数据不完整时优先复用、无历史 fallback；仍受 min/max 夹取；fixed 不读；`derivation` 带 warmStart 字段 | 通过（单测；真实压缩后未验证） |
+| I26 运行中手动以 step 基线插入 | 单测（`snapshot.test.js`/`step-baseline.test.js`）：`preserveFromSeq` 保留整步、cutoff 过窄 `no-compactable-range`、tool-pair 回退、`step/end` 的 `step-boundary` 落地、基线清空、无 in-flight 回退 retain-0 | 通过（单测；真实 GUI 未验证） |
 
 ---
 
@@ -245,7 +257,7 @@ $ cd F:\dev\GitHub\dsh-async-compaction && node --test
 - 本插件从"也管压缩语义/暴露密集调参"收敛为"只管时机与异步"：第一轮删除 9 个压缩语义键；第二轮删除 `manualCompactTimeoutSeconds` + 7 个自适应内部调参 + `growthWindow`；第三轮删除 `maxConcurrent`（共 19 个旧键）。这 19 个旧键在旧 profile 中仍被**静默忽略**；**其它未知键**现在会打 warning `unknown config key "<key>" was ignored`（不阻断启动）。并发改为单会话固定 1、跨会话可并行。
 - 自适应预测公式未变，但内部参数改为 `src/internal-policy.js` 固定常量；只保留 `minThreshold`/`maxThreshold`/`fallbackThreshold`。
 - 手动 `/compact` **不再有插件 deadline**：Promise 只在“后台结果落地 / 调用方 abort / 插件卸载或会话失效”时 settle；超过 600s 也不会自动失败。
-- 自动路径的保留区间改为跟随当前后端：`retainTokens`（含 `modelPolicies` 的 per-model 覆盖），读不到时按 `retainRatio=0.16` 推导并夹到阈值 90%；手动 `/compact` 固定 `retainTokens=0`。
+- 自动路径的保留区间改为跟随当前后端：`retainTokens`（含 `modelPolicies` 的 per-model 覆盖），读不到时按 `retainRatio=0.16` 推导并夹到阈值 90%；手动 `/compact` 默认 `retainTokens=0`（运行中 step 以基线保留整步）。
 - 摘要优先走后端 `summarize()`；回退用会话路由 + 常量 `FALLBACK_MAX_TOKENS=65536`；自动质量门槛改为内部常量 `MIN_REDUCTION_RATIO=0.05`（不可配置）；模型作用域过滤已移除。
 - **迁移验证仅由单测覆盖**：没有在真实 profile 中带着旧配置重启验证"旧键被忽略 + 新策略生效"（见 §7）。
 
@@ -297,6 +309,9 @@ $ cd F:\dev\GitHub\dsh-async-compaction && node --test
 | 40 | 超长会话的全量 steps 图与端点大小 | 未验证 | 单测覆盖优先 steps/6 刻度；未在真实会话跑超长序列，也未测 `/api/pre-compact/history` 响应体随步数增长 |
 | 41 | 真实压缩后的 warm start 取值 | 未验证 | 单测覆盖复用/fallback/fixed；未在真实压缩后观察 `adaptive-warm-start` 与阈值连续性 |
 | 42 | 真实宽屏/窄屏侧边栏与统计 chips | 未验证 | 全宽布局与 chips 换行只有离线断言 |
+| 43 | 真实 GUI 运行中 `/compact`（step-boundary） | 未验证 | 单测覆盖 preserveFromSeq/step-boundary；未在真实 step 执行中输入 `/compact` |
+| 44 | 真实 `step/start` 的 `event.seq` 与 surface seq 对齐 | 未验证 | 只按 seq 建模；未在真实事件流核对 |
+| 45 | 插件中途加载（无 `currentStepStartSeq`）回退 retain-0 | 未验证 | 单测覆盖回退；未在真实中途加载场景观察 |
 
 ---
 
@@ -309,5 +324,5 @@ $ cd F:\dev\GitHub\dsh-async-compaction && node --test
 | 自适应算法 | 公式、夹取、降级、突发保护均与代码实测一致；无实机会话验证 |
 | 安全不变量 | 关键不变量（原子提交、tool-pair、node0、generation、收缩、节流、不接管压缩语义、手动取代自动/flush/诊断、状态提示只读）均通过实机或单测验证；保留区间与阈值跟随后端（含 per-model `modelPolicies`）已由单测覆盖 |
 | 状态提示 | Host 资源与 client 映射/轮询有离线单测；**真实浏览器与真实 HTTP 端到端未验证**（§3.7） |
-| 是否可交付 | **可以交付为可用插件**（Host 平面 + **16 键**配置 + 命令 + 测试 + **13 字段**设置卡片 + **token 旁状态指示器** + **调试日志** + **右侧边栏可视化面板**），但应保留 §7 的未验证项作为发布说明；**手动 `/compact` hook 有专项单测、但尚未实机验证**（§3.5，且已无插件 deadline）；**设置卡片/状态指示器/调试日志/侧边栏面板 Host 侧通过，真实浏览器渲染/保存/轮询、真实 HTTP 与重启行为未验证**（§3.6–§3.9），发布说明必须分别标注，并提示用户"装好后刷新页面" |
+| 是否可交付 | **可以交付为可用插件**（Host 平面 + **16 键**配置 + 命令 + 测试 + **13 字段**设置卡片 + **token 旁状态指示器** + **调试日志** + **右侧边栏可视化面板** + **运行中手动 step 基线**），但应保留 §7 的未验证项作为发布说明；**手动 `/compact` hook（含 step 基线）有专项单测、但尚未实机验证**（§3.5/§3.11，且已无插件 deadline）；**设置卡片/状态指示器/调试日志/侧边栏面板 Host 侧通过，真实浏览器渲染/保存/轮询、真实 HTTP 与重启行为未验证**（§3.6–§3.9），发布说明必须分别标注，并提示用户"装好后刷新页面" |
 | 遗留问题与后续优化 | 见 §7 与 `docs/05-limitations.md` |

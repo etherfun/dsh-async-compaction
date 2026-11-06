@@ -15,7 +15,7 @@
 - **提前触发**：固定阈值（默认 70%）或自适应预测（按增长速率 + 压缩耗时，压缩后 warm start 保持上次目标）
 - **异步摘要**：复用后端 `summarize()` 钩子（拿不到时退回 `ctx.llm.stream()`），不阻塞主循环
 - **原子落地**：`compaction/start → summary → user/message(replace) → compaction/end`，快照后新增的消息原样保留
-- **手动接管**：`/compact` / `compactNow()` 也走后台上报 + 安全边界提交（`hookManualCompact: false` 可退回原生）
+- **手动接管**：`/compact` / `compactNow()` 也走后台上报 + 安全边界提交；**step 运行中发起时，以当前上一步为基线**（保留该 step 起的所有节点，只压更早历史），摘要就绪可在 `step/end` 边界落地、会话继续执行（`hookManualCompact: false` 可退回原生）
 - **可视化**：composer 指示器 + 右侧边栏面板（按 step 全量趋势、压缩记录、节省时间统计）
 - **可观测**：`/precompact` 命令、结构化日志、三个只读 HTTP 端点
 - **安全阀**：`dryRun`、`applyStrategy`、抗抖动地板、最小收益门、失败自动回退原生
@@ -42,7 +42,7 @@
 ## 使用
 
 - **自动**：达到触发点后后台摘要，`applyStrategy` 允许的边界（`safe` = pre-step / idle）自动落地
-- **手动**：输入 `/compact`，插件在后台完成摘要并提交，命令不再阻塞输入
+- **手动**：输入 `/compact`，插件在后台完成摘要并提交，命令不再阻塞输入。**step 正在执行时**，请求会记录 `step/start` 的 seq 作为基线：快照保留该 step 起的全部 surface 节点、只压缩更早历史；摘要若在 `step/end` 前就绪，可在 `step-boundary` 边界原子落地（`queueMicrotask` 避开 append 重入），否则仍等下一个 `pre-step`。基线在 `step/end`/`turn/start`/`turn/end` 清空；没有 in-flight step 时保持原生手动语义（`retainTokens=0`）。若基线之前没有可压缩历史 → `no-compactable-range`（手动 resolve `null`）；tool-pair 平衡必要时会把 cutoff 往前回退。
 - **面板**：会话头部「预压缩」→ 右侧边栏，查看上下文趋势（按 step）、压缩记录、累计节省时间
 - **指示器**：composer token 环旁显示 空闲/后台压缩中/已就绪/完成/失败
 
@@ -108,12 +108,12 @@ session/event · agent/pre-step · turn-stopping · idle · 5s timer
         └── src/manual-hook.js（接管 /compact）
 ```
 
-目录：`index.js`（Host 入口）、`src/`（Host 实现）、`client.js`（浏览器 half）、`test/`（273 个用例）、`docs/`（设计/算法/限制/验证）、`research/`（调研）。
+目录：`index.js`（Host 入口）、`src/`（Host 实现）、`client.js`（浏览器 half）、`test/`（284 个用例）、`docs/`（设计/算法/限制/验证）、`research/`（调研）。
 
 ## 开发
 
 ```bash
-npm test                 # node --test：273 个用例
+npm test                 # node --test：284 个用例
 node scripts/smoke.mjs   # 真实 host 语义下的端到端 smoke
 node scripts/smoke-manual.mjs
 node scripts/smoke-config-live.mjs
@@ -127,6 +127,7 @@ node scripts/smoke-client.mjs
 - `steps`（按步序列）全量保留、`samples`（120）/`history`（30）有界；均为内存态，插件重载/重启清空，面板只统计本次加载以来
 - 侧边栏依赖 `sidebarRight` 服务；未打开面板时不轮询
 - 手动请求没有插件级超时（生命周期交给原生压缩语义）
+- 运行中的手动压缩只保证 **step 基线**：不保证当前 step 内已产生的模型流/工具结果可被替换；若插件中途加载、没观察到 `step/start`，`currentStepStartSeq` 为空，会回退到原生 `retainTokens=0` 语义
 - 三个 HTTP 端点无统一鉴权（仅同源校验），只暴露聚合状态，不返回会话内容
 - 自适应 warm start 会沿用“上一次完整预测”的目标；配置或模型变化后可能短暂停留在旧阈值（仍受 min/max 夹取）
 - 与其它压缩插件共存时只负责调度；若后端已同步压缩，本插件会按 generation 校验放弃过期结果

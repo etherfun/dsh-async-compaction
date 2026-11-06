@@ -20,7 +20,7 @@
 - [6. 状态机](#6-状态机)
 - [7. 安全不变量清单](#7-安全不变量清单)
 - [8. 边界准入与配置落地](#8-边界准入与配置落地)
-  - [8.1 三个边界](#81-三个边界)
+  - [8.1 四个边界](#81-四个边界)
   - [8.2 落地策略矩阵](#82-落地策略矩阵)
   - [8.3 配置如何影响调度](#83-配置如何影响调度)
   - [8.4 插件页设置卡片与 volatile 就地更新](#84-插件页设置卡片与-volatile-就地更新)
@@ -96,7 +96,7 @@
 
 | 语义 | 归属 | 本插件的处理 |
 |---|---|---|
-| 保留区间（压缩后留多少） | 后端策略（全局 + per-model） | 自动路径完全复用后端的 per-target 合并顺序：目标 `retainTokens` → 目标 `retainRatio`（`floor(messageBudget×ratio)`）→ 全局 `retainTokens` → 全局 `retainRatio` → 内置默认 16%，最后 `min(raw, floor(thresholdTokens×0.9))`；阈值可被显式 `nativeThreshold` 覆盖，保留不受它影响；手动路径固定 `retainTokens=0`（只保留最后一个 surface 节点，工具对自动展开） |
+| 保留区间（压缩后留多少） | 后端策略（全局 + per-model） | 自动路径完全复用后端的 per-target 合并顺序：目标 `retainTokens` → 目标 `retainRatio`（`floor(messageBudget×ratio)`）→ 全局 `retainTokens` → 全局 `retainRatio` → 内置默认 16%，最后 `min(raw, floor(thresholdTokens×0.9))`；阈值可被显式 `nativeThreshold` 覆盖，保留不受它影响；手动路径通常 `retainTokens=0`（只保留最后一个 surface 节点，工具对自动展开）；**若请求发生在 step 执行中，则以 `currentStepStartSeq` 为基线保留该 step 起的全部节点，只压缩更早历史** |
 | 摘要模型 / provider / maxTokens | 后端 `summarize()` 或会话路由 | 优先调用后端 `summarize()`；回退路径用会话自身路由 + 常量 `FALLBACK_MAX_TOKENS=65536`；无配置项 |
 | 质量门槛 | 本插件内部常量（自动） | `MIN_REDUCTION_RATIO=0.05`（`src/commit.js` 导出，不可配置）；手动路径只要求 `framedTokens < shadowedRouteTokens` |
 | 模型作用域 | 后端/安装者策略 | 本插件不过滤；`routeUsable()` 仅判断"路由非空"，当前运行时未使用 |
@@ -238,7 +238,7 @@ flowchart TB
 | `src/policy.js` | 固定/自适应阈值计算、EMA/峰值、夹取与降级、`usageRatio`；`routeUsable()`（仅判断路由非空，运行时未用） | `evaluateTrigger`、`createGrowthTracker`、`createDurationTracker`、`routeUsable`、`usageRatio` |
 | `src/native-policy.js` | 找压缩服务（host/preset）、读后端策略（全局阈值/headroom/保留 + `modelPolicies` per-model 覆盖）、解析路由、取容量并预算阈值；**阈值/保留跟随当前路由命中的后端策略**（返回 `targetPolicy`） | `resolveNativePolicy`、`compactionServiceOf`、`routedTargetOf`、`DEFAULT_NATIVE_*` |
 | `src/surface.js` | surface 词汇（5 类事件）、区间选择（保留尾部、工具对平衡、node0 保护）、摘要输入、checkpoint 消息/source | `selectCompactableRange`、`buildSummarizationInput`、`createCheckpointMessage`、`toolPairingBalanced*` |
-| `src/snapshot.js` | 冻结快照：区间、节点定价、generation、摘要输入、策略依据；手动路径固定 `retainTokens=0` | `createSnapshot`、`describeSnapshot` |
+| `src/snapshot.js` | 冻结快照：区间、节点定价、generation、摘要输入、策略依据；手动路径默认 `retainTokens=0`，**运行中请求用 `preserveFromSeq` 保留当前 step 起的全部节点**；`preserveFromSeq` 记录到 snapshot 供校验 | `createSnapshot`、`describeSnapshot` |
 | `src/summarizer.js` | 首选后端 `summarize()` 钩子并归一化；回退 `ctx.llm.stream()`（会话路由 + 常量 65536）；checkpoint 定价 | `runSummarization`、`prepareCheckpoint` |
 | `src/commit.js` | `CommitError`、`validateCommit`、`appendCompaction`、锁检查；**内部常量 `MIN_REDUCTION_RATIO=0.05`** | `appendCompaction`、`validateCommit`、`CommitError`、`MIN_REDUCTION_RATIO`、`compactionLockActive` |
 | `src/config.js` | `DEFAULTS`（**16 键**）、`resolveConfig`（逐字段校验 + warning 不失败）、`unwrapConfigRefs`、可选 schemastery schema（行为字段 `.volatile()`，`statusCommand` 除外） | `DEFAULTS`、`resolveConfig`、`unwrapConfigRefs`、`loadConfigSchema` |
@@ -264,7 +264,7 @@ flowchart TB
 | 自适应预测内部参数固定为常量 | 公式不变，但只暴露 3 个阈值窗口/回退；少一个旋钮就少一类"调参后行为不可解释"的问题，也避免与后端阈值策略重复 |
 | 手动请求没有插件 deadline | 生命周期归原生压缩语义：Promise 只在落地/abort/卸载/会话失效时 settle；不再维护本地超时计时器 |
 | 状态提示走只读 HTTP + 轮询，不写入 session | 摘要在途时没有 `compaction/*` 事件可订阅；HTTP 资源能独立暴露"正在压缩"，且不污染会话日志、不含消息内容（隐私/鉴权边界比写事件更小） |
-| 手动请求取代自动工作、共用提交流水线 | 快照/摘要/锁/四连写/校验共用；但手动不复用自动 READY/在途结果——先 `supersedeAutomaticWork()`，再按 `retainTokens=0` 与"只要求更小"重新摘要（代价：自动任务在跑时多一次摘要） |
+| 手动请求取代自动工作、共用提交流水线 | 快照/摘要/锁/四连写/校验共用；但手动不复用自动 READY/在途结果——先 `supersedeAutomaticWork()`，再按“step 基线或 `retainTokens=0`”与"只要求更小"重新摘要（代价：自动任务在跑时多一次摘要） |
 | 取消用"generation + abandoned"而不是单纯 abort | `cancelActiveManualTask()` 标记任务作废并递增 `state.generation`；`startTask` 在 await 返回后比对 generation/abandoned，晚到的摘要结果直接丢弃 |
 | 设置卡片放在 bundle 详情页（`plugins.bundle.config`）而不是 Settings 分区 | bundle 详情页本来就展示该行、与该行配置文档一一对应；再在 Settings 里复制一份会产生两个入口/两份状态 |
 | 行为字段全部 `.volatile()`、保存即生效 | Host 每次决策都读 `config` 对象，`applyConfig()` 只需 `Object.assign` + 触发重评估；重启会丢后台任务/manual hook |
@@ -296,7 +296,7 @@ stateDiagram-v2
   summarizing --> failed: summary / commit
   summarizing --> failed: changed（自动重试一次）
   summarizing --> cancelled: signal abort / pause / dispose（abandoned）
-  ready --> applied: 安全边界四连写 → resolve CompactionResult
+  ready --> applied: 安全边界四连写（pre-step / step-boundary / turn-stopping / idle）→ resolve CompactionResult
   ready --> failed: 提交校验失败（locked→busy / span→changed 重试一次）
   ready --> cancelled: abort / 暂停（丢弃手动 READY）
   applied --> [*]
@@ -308,6 +308,10 @@ stateDiagram-v2
 - **取代自动工作（不复用）**：`tryManualCompaction()` 先 `supersedeAutomaticWork()`——自动 READY 会被 `discard(reason='manual-request-supersedes')`，在途自动任务会被标记 `abandoned`、`generation+1`、`abort`，然后**总是启动全新的手动摘要**。这样手动请求不会继承自动保留区间/自动 5% 门槛；代价是自动任务在跑时会多一次摘要（原任务被取消）。
 - **绕过**：`applyStrategy`、`minInterval`、`retriggerFloor`、`minShadowedTokens`、内部 5% 收缩门槛。
 - **不绕过**：锁、generation/定价校验、tool-pair 平衡、四连写失败兜底。
+- **运行中 step 基线（`preserveFromSeq`）**：`step/start` 时记录 `state.currentStepStartSeq = event.seq`；手动请求若在 step 执行中，`createSnapshot({manual:true, preserveFromSeq})` 把该 seq 起的所有 surface 节点视为“当前步基线”保留，只压缩更早历史；保留预算 = 基线节点的路由价之和，选择器停在基线首节点。基线在 `step/end`/`turn/start`/`turn/end` 清空；**没有 in-flight step 时**回退原生手动语义（`retainTokens=0`）。
+- **step 边界落地**：摘要就绪后若 `step/end` 到来，`onSessionEvent` 用 `queueMicrotask`（避开 append 重入）调 `applyReady(state, BOUNDARIES.STEP='step-boundary')`，会话继续执行；若 `step/end` 时摘要尚未 READY，则仍等下一个 `pre-step`。手动结果不检查 `applyStrategy`，所以 STEP 边界对手动始终可用。
+- **cutoff 过窄**：基线落在首个可压缩节点之前、或基线之前没有更早历史 → `skip='no-compactable-range'`，手动请求 resolve `null`；tool-pair 平衡必要时会把 cutoff 往前回退，避免拆开 assistant tool call / tool result。
+- **可观测**：`statusFor()` 暴露 `currentStepStartSeq`；`history[].boundary` 可为 `step-boundary`。
 - **reject 形状**：`Error{name:'ManualCompactionError', code}`，code 与宿主闭集同名（`busy / cancelled / changed / summary / commit`）。内部 code 映射见 `manualFailureOf()`。
 - **重试**：`changed`（提交阶段区间/代数/平衡失败，以及摘要期间被 `invalidate`）且 `retried !== true` 时自动重跑一次；第二次仍 `changed` 才 reject。
 - **skip + 无 agent**：快照 skip 时若 `state.manual` 仍等待、但会话没有 attached agent，会 `rejectManual('summary', 'Compaction cannot start because the session has no attached agent.')`，不会悬挂。
@@ -364,9 +368,9 @@ flowchart LR
 要点：
 
 - **测量是同步、确定、无模型调用的**（`ctx.tokenMeter.measure()`），可以频繁做；真正贵的是摘要模型调用，因此把它移出。
-- **保留区间跟随后端**：`resolveNativePolicy()` 读后端的 `retainTokens`（或按 `retainRatio=0.16` 推导），自动快照用它决定"从尾部保留多少"；手动路径固定 `retainTokens=0`（只保留最后一个节点，工具对自动展开）。
+- **保留区间跟随后端**：`resolveNativePolicy()` 读后端的 `retainTokens`（或按 `retainRatio=0.16` 推导），自动快照用它决定"从尾部保留多少"；手动路径通常 `retainTokens=0`（只保留最后一个节点，工具对自动展开），**运行中请求则以 `currentStepStartSeq` 为基线保留当前 step**。
 - **抗抖动下限（`retriggerFloor`）**：成功落地后把下限设为"落地后估算占用 + max(2048, 1%×C)"（dry-run 用快照时的占用 + 同一增量），在占用涨回下限之前即使已达阈值也不再触发；占用回落到触发阈值以下则清零。该下限**不是配置项**，只随运行时状态维护；**手动请求绕过它**。
-- **手动路径汇入同一个 `T → R → B → V → W`**：区别只在入口（`state.manual` 排队）、区间预算（固定 `retainTokens=0`）、跳过的门（`applyStrategy`/`minInterval`/`retriggerFloor`/`minShadowedTokens`/内部 5% 收缩门槛）、以及落地后 settle Promise。
+- **手动路径汇入同一个 `T → R → B → V → W`**：区别只在入口（`state.manual` 排队）、区间预算（运行中 step 用 `preserveFromSeq` 基线，否则 `retainTokens=0`）、跳过的门（`applyStrategy`/`minInterval`/`retriggerFloor`/`minShadowedTokens`/内部 5% 收缩门槛）、以及落地后 settle Promise。
 - **增长/耗时样本在"任务在途"期间不再采样**：`evaluate()` 在 `state.active !== null || state.ready !== null` 时直接返回，所以 EMA 反映的是"空闲——增长——触发"的周期，而不是压缩期间的假象（手动请求的 `beginManualTask()` 会补一次测量样本）。
 - **数据完整度决定自适应还是降级**：`fresh && 增长样本≥2 && 有耗时样本 && 后端策略不是 `defaults`` 才算 `dataComplete`。`dataComplete=false` 时优先用 **warm start**（复用上一次完整预测的 adaptive 目标，reason `adaptive-warm-start`，`derivation.warmStartTokens/warmStartRatio/warmStartAt`），没有历史完整预测时才用 `fallbackThreshold`（详见 [03](03-adaptive-algorithm.md)）。
 - **warm start 的来源**：coordinator 在 `mode==='adaptive' && dataComplete===true` 时把 `{at, triggerTokens, triggerRatio}` 记到 `state.lastAdaptiveTarget`；下一次 `evaluateTrigger({warmStart: state.lastAdaptiveTarget})` 在数据不完整时复用它。这样一次成功压缩的 `growth.reset()` 不会让阈值立刻从 75% 掉回 65%；fixed 模式不读取 warm start。
@@ -458,7 +462,7 @@ sequenceDiagram
     C->>C: state.manual = 请求（Promise.withResolvers）
     C->>C: shouldHookManual 检查；已有 manual → busy
     C->>C: supersedeAutomaticWork()：丢弃自动 READY / abandon+abort 在途自动任务
-    C->>SS: createSnapshot({manual:true})（retainTokens=0，全新摘要）
+    C->>SS: createSnapshot({manual:true, preserveFromSeq?})（运行中 step 以基线保留，否则 retainTokens=0）
     C-)SM: runSummarization（后台）
     SM-->>C: 摘要 + 定价
     C->>C: READY（running agent 等下个 pre-step）
@@ -522,14 +526,14 @@ stateDiagram-v2
 | I4 | **锁互斥**：不与原生/其它压缩同时提交 | `compactionLockActive()` 检查未配对 `compaction/start`；有锁 → `locked` | `REJECTED`，不写任何事件 |
 | I5 | **generation 校验**：快照后 surface 变了就不能落地 | 同时校验 `contentGeneration`/`replaceGeneration`、区间 seq、节点定价、节点数 | `surface-replaced` / `span-*` → 丢弃 |
 | I6 | **原生兜底**：插件失败不影响原生压缩 | 不改原生后端/不卸载；本地失败只记录 `lastFailure` | 原生仍在 80% 处兜底 |
-| I7 | **保留区间跟随其后端**：不复制、不覆盖保留策略 | 自动：`native.retainTokens`（读不到用 16% 默认推导并夹到阈值 90%）；手动：固定 0 | 后端升级/替换时行为自动跟随 |
+| I7 | **保留区间跟随其后端**：不复制、不覆盖保留策略 | 自动：`native.retainTokens`（读不到用 16% 默认推导并夹到阈值 90%）；手动：默认 0，运行中 step 以 `preserveFromSeq` 基线保留 | 后端升级/替换时行为自动跟随 |
 | I8 | **事件类型合法**：只写 `compaction/*` 与 `user/message(replace)` | 常量集中定义；不新增事件类型 | 持久化读路径不会遇到未知类型 |
 | I9 | **不重入**：append 发布期间不再次 append | 事件监听器只读/排队；提交发生在边界 | fake session 重入测试 |
 | I10 | **不阻塞**：hook 里不 await 模型调用 | 摘要走后台任务；提交同步且毫秒级 | 实机压缩事务 3 ms 级 |
 | I11 | **幂等 + 手动取代自动**：同会话不重复启动；手动请求不复用自动结果 | `state.active`/`state.ready` 检查；手动先 `supersedeAutomaticWork()`（discard READY + abandon/abort 在途），再启动全新手动任务 | 单测覆盖；自动 READY 被丢弃记 `manual-request-supersedes` |
 | I12 | **收缩保证**：替换必须真的省上下文 | 自动：`framedTokens < shadowedRouteTokens` 且 `reduction ≥ MIN_REDUCTION_RATIO`（内部 0.05）；手动：只要求更小 | `not-smaller` / `small-reduction` 拒绝 |
 | I13 | **节流/降级**：不越过最小间隔/抗抖动（跨会话不做全局节流）；自适应数据不完整时优先 warm start、无历史才 fallback | `minInterval`、`retriggerFloor`（仅自动）；无全局 `maxConcurrent`/`activeTasks`；`state.lastAdaptiveTarget` 仅存最后一次 `dataComplete` 预测；fixed 不读 warm start | `trigger deferred:` / `lastSkip` / `reason=adaptive-warm-start` |
-| I14 | **手动请求不占维护窗口 + 语义独立**：命令等待后台结果；手动结果不被自动保留/门槛污染 | 包装 `compactNow`，后台摘要 + 边界提交；不要求 agent idle；`supersedeAutomaticWork()` 后再 `createSnapshot({manual:true, retainTokens:0})` | 自动任务在跑时手动会多一次摘要（原任务取消） |
+| I14 | **手动请求不占维护窗口 + 语义独立**：命令等待后台结果；手动结果不被自动保留/门槛污染 | 包装 `compactNow`，后台摘要 + 边界提交；不要求 agent idle；`supersedeAutomaticWork()` 后再 `createSnapshot({manual:true, ...})`（运行中 step 用 `preserveFromSeq`，否则 `retainTokens=0`） | 自动任务在跑时手动会多一次摘要（原任务取消） |
 | I15 | **最小收益门**：不为很小的区间付一次摘要（仅自动） | `createSnapshot()` 在 `!manual` 时比较 `minShadowedTokens` | `skip='range-too-small'` |
 | I16 | **不丢新增**：快照之后的 append 原样保留 | replace 只覆盖快照区间；`sourceEventSeqs` 覆盖 shadow 节点 | e2e：压缩期间新增 3 条仍可见 |
 | I17 | **hook 只接管不替换、可还原** | `WeakMap` 存原方法；卸载 `restore()`；不可写则不接管 | 原生 `/compact` 行为作为兜底 |
@@ -540,28 +544,31 @@ stateDiagram-v2
 | I22 | **调试日志不泄露消息内容、缓冲有界**：所有级别可查，但字段有界、端点只读 | `log.js` 双写 + `sanitizeFields()`（字符串 300/数组 20/深度 3/循环/Error）；缓冲容量 `logBufferSize`（0 关闭）；`logs-endpoint` 只读 + 同源 + 参数校验；缓冲不持久化 | 病态字段被截断；重启后缓冲清空 |
 | I23 | **可视化数据有界/只读（steps 例外）**：采样/记录不写 session，端点只返回白名单；x 轴优先用 `steps`（全量）；统计只由 history 派生；面板只读 sidebar tab | `samples` 120（回退）/`history` 30（有界）；**`steps` 全量不设上限**（用户取舍）；`history-endpoint` 的 `current` **20 字段**白名单、未知会话三空数组、同源/400/`no-store`；client 优先 `steps`、最多 6 刻度、无 step 回退/未知类别；`buildStats` 纯聚合（savedMs/averageMs/freedTokens/toTrigger）；sidebar 服务缺失跳过 | 重载后清空（面板明示）；长会话 steps 内存/响应随步数增长 |
 | I24 | **并发模型：单会话串行、跨会话并行** | 每会话 `active`/`ready` 各至多 1；删除进程级并发闸门与 `activeTasks`，无 `maxConcurrent` 配置；多个会话可同时摘要 | 同会话不会两份摘要争抢；跨会话成本由模型服务侧承担 |
+| I25 | **warm start 有界且不替代完整预测** | `state.lastAdaptiveTarget` 只存最后一次 `dataComplete` 的 adaptive 目标；数据不完整时优先复用、无历史 fallback；仍受 min/max 夹取；fixed 不读 | 新数据重建后替换；配置/模型变化可能短暂沿用旧阈值 |
+| I26 | **运行中手动以 step 基线插入**：不等待回合结束、不覆盖当前 step | `step/start` 记录 `currentStepStartSeq`；手动快照用 `preserveFromSeq` 保留该 step 起全部节点、只压更早历史；`step/end` 用 `queueMicrotask` 在 `step-boundary` 落地；基线在 step/turn 结束清空；无 in-flight step 回退 `retainTokens=0` | cutoff 过窄 `no-compactable-range`（resolve null）；tool-pair 回退；未观察到 step 事件时回退原生语义 |
 
 ---
 
 ## 8. 边界准入与配置落地
 
-### 8.1 三个边界
+### 8.1 四个边界
 
 | 边界 | 触发时机 | 是否可提交 |
 |---|---|---|
 | `PRE_STEP` | `agent/pre-step`（每次 step 前） | 是（`applyStrategy=safe/end-of-turn` 允许；`idle-only` 不允许） |
+| `STEP` | `session/event` 的 `step/end`（`queueMicrotask` 避开 append 重入） | **仅手动**（手动不检查 `applyStrategy`）；自动不使用该边界 |
 | `TURN_STOPPING` | `agent/turn-stopping` | 是（`safe`/`end-of-turn`；`idle-only` 不允许） |
 | `IDLE` | `agent/status` → `idle` | 是（三种策略都允许） |
 
-定时 tick 只做"测量 + 评估"（`state.active/ready` 为空时），不直接提交。提交前必须满足：无在途任务、有 `ready`、边界允许、agent 状态允许（手动在 idle 边界还要求 agent 确实 idle）、`validateCommit` 通过。
+定时 tick 只做"测量 + 评估"（`state.active/ready` 为空时），不直接提交。提交前必须满足：无在途任务、有 `ready`、边界允许、agent 状态允许（手动在 idle 边界还要求 agent 确实 idle）、`validateCommit` 通过。`STEP` 边界只在 `step/end` 且存在**手动** READY 时触发；若摘要未就绪，仍等下一个 `PRE_STEP`。
 
 ### 8.2 落地策略矩阵
 
-| `applyStrategy` | `PRE_STEP` | `TURN_STOPPING` | `IDLE` |
-|---|---|---|---|
-| `safe` | ✅ | ✅ | ✅ |
-| `end-of-turn` | ❌ | ✅ | ✅ |
-| `idle-only` | ❌ | ❌ | ✅ |
+| `applyStrategy` | `PRE_STEP` | `STEP` | `TURN_STOPPING` | `IDLE` |
+|---|---|---|---|---|
+| `safe` | ✅ | 手动专用 | ✅ | ✅ |
+| `end-of-turn` | ❌ | 手动专用 | ✅ | ✅ |
+| `idle-only` | ❌ | 手动专用 | ❌ | ✅ |
 
 **手动请求不受 `applyStrategy` 限制**：`applyReady()` 用 `manualPending` 绕过策略判断，只在真正能写的边界（idle 边界要求 agent idle）落地。
 
@@ -586,7 +593,7 @@ stateDiagram-v2
 
 **不在此配置里的压缩语义**：保留区间与阈值（后端全局 + `modelPolicies` per-model 覆盖；阈值/headroom 优先级 override > target > global > 默认 0.8/65536，保留优先级目标 token > 目标 ratio > 全局 token > 全局 ratio > 默认 16%）、摘要模型/provider/maxTokens（后端 `summarize()` 或会话路由 + 常量 65536）、质量门槛（内部 `MIN_REDUCTION_RATIO=0.05`）、模型作用域（已移除）、自适应预测内部参数（`src/internal-policy.js` 常量）。已删除的 19 个旧键（含 `maxConcurrent`）在旧 profile 中会被静默忽略。
 
-> 手动请求与自动调度的关系：`tryManualCompaction()` **不经过** `evaluateTrigger`/`routeUsable`/`minInterval`/`retriggerFloor`；`applyReady()` 里用 `manualPending` 绕过 `applyStrategy`；`createSnapshot({manual:true})` 固定 `retainTokens=0` 且**不检查 `minShadowedTokens`**；锁与提交校验照常生效。手动与自动在**同一会话**内串行（手动会先取代自动工作），但不同会话之间互不阻塞。
+> 手动请求与自动调度的关系：`tryManualCompaction()` **不经过** `evaluateTrigger`/`routeUsable`/`minInterval`/`retriggerFloor`；`applyReady()` 里用 `manualPending` 绕过 `applyStrategy`（因此手动可用 `step-boundary`）；`createSnapshot({manual:true})` 默认 `retainTokens=0` 且**不检查 `minShadowedTokens`**，运行中 step 用 `preserveFromSeq` 基线；锁与提交校验照常生效。手动与自动在**同一会话**内串行（手动会先取代自动工作），但不同会话之间互不阻塞。
 
 ### 8.4 插件页设置卡片与 volatile 就地更新
 
@@ -719,6 +726,8 @@ stateDiagram-v2
 | 手动：hook 内部抛错 | wrapper catch | warn `manual compaction hook failed; falling back…`，本次 delegate | 原生 `/compact` 行为 |
 | 手动：同会话重复请求 | `tryManualCompaction()` | 立即 reject `busy` | 原生行为不变 |
 | 手动：无区间 | `createSnapshot` skip | resolve `null`（宿主显示 "No compactable history yet."） | — |
+| 手动：运行中 step 基线过窄/无更早历史 | `createSnapshot({preserveFromSeq})` | `skip='no-compactable-range'` → resolve `null`；tool-pair 必要时 cutoff 前移 | 原生兜底 |
+| 手动：未观察到 `step/start` | `state.currentStepStartSeq === null` | 回退原生 `retainTokens=0` 语义（不保留当前 step） | 原生兜底 |
 | 手动：skip 且无 attached agent | `startTask` skip 分支 | reject `summary`（"Compaction cannot start because the session has no attached agent."），不悬挂 | 原生兜底 |
 | 手动：自动 READY/在途存在 | `supersedeAutomaticWork()` | 丢弃自动 READY（`manual-request-supersedes`）、abandon+abort 在途；随后启动全新手动摘要（可能多一次摘要） | 原自动任务不再写入 |
 | 手动：flush 失败 | `flushSession()` | warn `manual compaction flush failed`；命令已按提交结果 settle | 压缩已落地，仅持久化检查点缺失 |

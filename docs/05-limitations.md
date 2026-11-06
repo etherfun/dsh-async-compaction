@@ -18,7 +18,7 @@
 - [2. 行为边界](#2-行为边界)
   - [2.1 每会话单任务](#21-每会话单任务)
   - [2.2 插件不做全局节流：多会话可并行摘要](#22-插件不做全局节流多会话可并行摘要)
-  - [2.3 只在三个边界落地](#23-只在三个边界落地)
+  - [2.3 只在四个边界落地](#23-只在四个边界落地)
   - [2.4 无法压缩单条超大消息](#24-无法压缩单条超大消息)
   - [2.5 与图像 offload / 消息投影的交互](#25-与图像-offload--消息投影的交互)
   - [2.6 与 tool-result pruner 的关系](#26-与-tool-result-pruner-的关系)
@@ -183,18 +183,19 @@
 
 **取舍**：删掉全局闸门换来了"跨会话不互相饿死"（原先一个长会话的摘要会让其他会话一直等），代价是成本峰值更直接地传导到模型服务。需要控成本时用 `minInterval`（每会话）或从后端侧限制。
 
-### 2.3 只在三个边界落地
+### 2.3 只在四个边界落地
 
 | 边界 | 语义 | 限制 |
 |---|---|---|
 | `pre-step` | 当前 turn 内、step 前 | 与原生压缩同一事件，靠事件注册顺序决定先后（未实测，见 06）；若本插件先落地，原生在同一 step 内会看到新的更低占用 |
+| `step-boundary` | `session/event` 的 `step/end`（`queueMicrotask`） | **仅手动**；自动不用。摘要未就绪则等下一个 `pre-step`；当前 step 的模型流/工具结果仍在进行中，不能替换 |
 | `turn-stopping` | turn 即将关闭 | 只在 agent 正常收尾时触发；异常/崩溃路径不触发 |
 | `idle` | agent 空闲 | `status === 'idle'`；若 agent 一直 running（长任务），`idle-only` 策略下永远不会落地 |
 
 **不能做什么**：
 
 - 不能在"用户发来新消息但 agent 尚未 start"的窗口里落地（没有对应事件）；
-- 不能在请求进行中（stream 期间）落地——那会破坏 KV 前缀与消息一致性（平台也不允许中途改 surface）；
+- 不能在请求进行中（stream 期间）落地——那会破坏 KV 前缀与消息一致性（平台也不允许中途改 surface）；`step-boundary` 只在 step **结束**后、且只保留该 step 起的节点，不触碰仍在进行的模型流；
 - 不能保证在 `turn/end` 之后、`agent/status(idle)` 之前落地（时间窗取决于宿主）。
 
 ### 2.4 无法压缩单条超大消息
@@ -262,12 +263,12 @@
 保留策略属于**压缩语义**，已从本插件配置中移除（`retainRatio`/`retainTokens`/`manualCompactRetainTokens` 三个键被删除，旧值静默忽略）：
 
 - 自动路径：`resolveNativePolicy()` 读当前后端的 `retainTokens`；读不到时用 `DEFAULT_NATIVE_RETAIN_RATIO=0.16` 按 `messageBudget × 0.16` 推导，并夹到 `≤ 90% × 原生阈值`。
-- 手动 `/compact`：固定 `retainTokens=0`——只保留最后一个 surface 节点（工具对自动展开），与原生 `compactNow` 语义一致。
+- 手动 `/compact`：默认 `retainTokens=0`——只保留最后一个 surface 节点（工具对自动展开），与原生 `compactNow` 语义一致；**运行中 step 则以 `currentStepStartSeq` 为基线保留整步**。
 - 好处：换后端/升级后端时保留行为自动跟随，不会与后端或其它压缩插件"两套策略打架"。
 - 代价：**不能**再单独把预压缩调得比后端更激进/更保守；要改保留区间，请改后端的 `retainRatio`/`retainTokens`（或换后端）。若后端没有暴露策略（`source=defaults`），自动路径会退回 16% 默认值。
 - **保留策略完全复用后端的 per-target 合并顺序**（已按 `dsh-compaction-basic` 的 `resolveRetention` 对齐）：目标 `retainTokens` → 目标 `retainRatio`（`floor(messageBudget×ratio)`）→ 全局 `retainTokens` → 全局 `retainRatio` → 内置默认 16%，最后 `min(raw, floor(thresholdTokens×0.9))`。即"显式 token 优先于比例、目标优先于全局"。
 - **`floor(thresholdTokens×0.9)` 是插件自保取舍**：宿主在"保留量 ≥ 阈值"时会直接抛配置错误；本插件选择夹到 ≤90% 阈值，宁可少保留/本次不压，也不让预压缩越界。这与"完全照搬后端"不同，但保证不会因保留量过大而提交失败。
-- **阈值/headroom 也跟随后端 per-target 策略**：`readBackendPolicy()` 解析后端 `modelPolicies`（按 provider/model 覆盖 `thresholdRatio`/`headroomTokens`/`retainRatio`/`retainTokens`）；阈值/headroom 优先级：显式 `nativeThreshold` 覆盖 > 目标策略 > 全局策略 > 内置默认 0.8/65536，返回值带 `targetPolicy`。手动 `/compact` 仍固定 `retainTokens=0`。
+- **阈值/headroom 也跟随后端 per-target 策略**：`readBackendPolicy()` 解析后端 `modelPolicies`（按 provider/model 覆盖 `thresholdRatio`/`headroomTokens`/`retainRatio`/`retainTokens`）；阈值/headroom 优先级：显式 `nativeThreshold` 覆盖 > 目标策略 > 全局策略 > 内置默认 0.8/65536，返回值带 `targetPolicy`。手动 `/compact` 默认仍 `retainTokens=0`（运行中 step 用基线）。
 
 ### 2.11 最小收益门的副作用
 
@@ -301,8 +302,11 @@ retriggerFloor = 落地后估算占用 + max(2048, round(C × 1%))     # dry-run
 | 交互 | 行为 |
 |---|---|
 | 同会话已有 manual 请求 | 第二个请求立即 `reject(busy)`，不排队 |
-| 已有自动任务在途 | 标记 `abandoned`、`generation++`、`abort`；随后**启动全新手动摘要**（`retainTokens=0`、只要求更小）。自动任务被取消，手动会多付一次摘要 |
+| 已有自动任务在途 | 标记 `abandoned`、`generation++`、`abort`；随后**启动全新手动摘要**（运行中 step 用基线保留整步，否则 `retainTokens=0`、只要求更小）。自动任务被取消，手动会多付一次摘要 |
 | 已有自动 READY | `discard(reason='manual-request-supersedes')`，不落地、不复用；随后启动全新手动摘要 |
+| step 执行中发起 | 记录 `currentStepStartSeq`（`step/start` 的 seq）作基线：保留该 step 起全部 surface 节点、只压更早历史；**不等待回合结束**，摘要就绪可在 `step/end` 的 `step-boundary` 落地（`queueMicrotask`），否则等下一个 `pre-step` |
+| 基线过窄/无更早历史 | `skip='no-compactable-range'` → 手动 resolve `null`；tool-pair 平衡必要时 cutoff 前移 |
+| 未观察到 `step/start` | `currentStepStartSeq` 为空 → 回退原生 `retainTokens=0`（插件中途加载时可能发生） |
 | 日志 | 取代发生时打 info `manual request superseded automatic pre-compaction work` |
 | 手动是否占全局名额 | **不存在全局名额**：手动只占本会话的槽位；不同会话的自动摘要不受影响 |
 | `minInterval` / `retriggerFloor` | 手动请求**不检查**；可以在冷却期内立即压缩 |
@@ -520,7 +524,7 @@ retriggerFloor = 落地后估算占用 + max(2048, round(C × 1%))     # dry-run
 | 对主循环/新输入 | 占用维护窗口，新输入等待；运行中 turn 报 `busy` | 不占用维护窗口；命令等待，agent 可继续工作 |
 | 前置条件 | agent 必须 **idle**；`runMaintenance` 独占；`openTurn === null` | 不要求 idle；可在 turn 内落地（`turn` 可能非 `null`） |
 | 同会话并发 | `assertNoActiveCompaction` / `busy` | 已有 manual → `busy`；已有自动任务/结果 → **取代**（丢弃 READY / abandon+abort 在途），按手动语义重新摘要 |
-| 保留尾部 | 内部 `retainTokens=0`（只保留最后一个节点） | 同（固定 `retainTokens=0`，语义一致；无配置项） |
+| 保留尾部 | 内部 `retainTokens=0`（只保留最后一个节点） | 默认同（固定 `retainTokens=0`，语义一致；运行中 step 以基线保留整步；无配置项） |
 | 收缩门槛 | 只要求 `estimateMessage < shadowedRouteTokens` | 同（**不**额外要求内部 5% 常量，也**不**检查 `minShadowedTokens`） |
 | 结果 | `CompactionResult`（`turn:null`） | 同形状 + `manual:true`（`turn` 视边界而定） |
 | `sourceCommandId` | 写进 `compaction/start|end`（手动路径） | 写进 `start|summary|end` |
@@ -635,6 +639,7 @@ retriggerFloor = 落地后估算占用 + max(2048, round(C × 1%))     # dry-run
 | 图表未实机 | SVG/窄栏布局/主题/读屏仅离线测试 | 以真实浏览器为准 |
 | 节省时间是估算 | Σ 摘要耗时，不含排队/等边界/轮询 | 当“等价同步阻塞时间”看，不当墙钟收益 |
 | 步骤轴缺 step | 启动前步骤无记录；全无 step 时按序号/「未知步骤」 | 等下一次 `step/start`；不影响压缩 |
+| 运行中手动压缩 | 只保证 **step 基线**（保留当前 step 起的节点），不保证当前 step 内已产生的模型流/工具结果可替换；step 事件缺失时回退原生 retain-0 | 用户显式请求；需要更强语义时等原生/回合结束 |
 | 同步多采样 | 只画该步最后一条 | 需要完整序列用 samples 接口原始数据 |
 | 设置卡片 | 只改配置、无状态面板；新装/更新后需刷新页面 | 刷新页面或重开 bundle；状态看 `/precompact status` |
 | 激活不可见（低日志级） | 只有 info 探针 + `fiberPhase` | 用 info/debug 或无头 inspect 看 `include:pre-compact` |

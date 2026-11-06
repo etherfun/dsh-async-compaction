@@ -45,7 +45,12 @@ export const PHASE = Object.freeze({
 })
 
 /** Boundaries at which a prepared result may be applied. */
-const BOUNDARIES = Object.freeze({ PRE_STEP: 'pre-step', TURN_STOPPING: 'turn-stopping', IDLE: 'idle' })
+const BOUNDARIES = Object.freeze({
+  PRE_STEP: 'pre-step',
+  STEP: 'step-boundary',
+  TURN_STOPPING: 'turn-stopping',
+  IDLE: 'idle',
+})
 
 /** Combine abort signals without requiring `AbortSignal.any` (Node 20.3+). @param {Array<AbortSignal | undefined>} signals */
 function combineSignals(signals) {
@@ -179,6 +184,10 @@ export function createRuntime(ctx, config, warnings = []) {
         // Latest turn/step observed on `turn/start` and `step/start`.
         turn: null,
         step: null,
+        // Seq of the step currently in flight, if any. A manual request made
+        // while a step is running uses it as the baseline: everything from this
+        // step onward is kept, older history is compacted.
+        currentStepStartSeq: null,
         generation: 0,
         createdAt: nowMs(),
       }
@@ -763,6 +772,7 @@ export function createRuntime(ctx, config, warnings = []) {
         triggerTokens: decision.triggerTokens ?? 0,
         now: at,
         manual,
+        preserveFromSeq: manual ? state.currentStepStartSeq : undefined,
       })
     } catch (error) {
       state.phase = PHASE.IDLE
@@ -1137,7 +1147,21 @@ export function createRuntime(ctx, config, warnings = []) {
       const step = Number(event?.data?.step)
       if (event?.type === 'step/start' && Number.isFinite(step)) state.step = step
     }
+    if (event?.type === 'step/start') {
+      state.currentStepStartSeq = Number.isFinite(event?.seq) ? event.seq : null
+    } else if (event?.type === 'step/end' || event?.type === 'turn/end' || event?.type === 'turn/start') {
+      state.currentStepStartSeq = null
+    }
     if (state.applying) return
+    // A prepared manual result may land between two steps while the turn keeps
+    // running: the completed step is a safe boundary and the snapshot preserved
+    // the in-flight step. Defer past the append that delivered this event.
+    if (event?.type === 'step/end' && state.ready !== null && state.ready.manual === true) {
+      queueMicrotask(() => {
+        if (disposed || state.ready === null || state.ready.manual !== true) return
+        applyReady(state, BOUNDARIES.STEP)
+      })
+    }
     // A replacement (native compaction, pruning, image offload rewriting a node)
     // invalidates any snapshot built before it.
     if (event?.type === 'compaction/end') {
@@ -1409,6 +1433,7 @@ export function createRuntime(ctx, config, warnings = []) {
       mode: config.triggerMode,
       turn: state.turn ?? null,
       step: state.step ?? null,
+      currentStepStartSeq: state.currentStepStartSeq ?? null,
       applyStrategy: config.applyStrategy,
       phase: state.phase,
       hasActiveTask: state.active !== null,

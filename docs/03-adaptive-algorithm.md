@@ -6,7 +6,7 @@
 >
 > 实现：`src/policy.js` 的 `createGrowthTracker` / `createDurationTracker` / `evaluateTrigger`；调参常量在 `src/internal-policy.js`；调用点：`src/coordinator.js` 的 `evaluate()`。所有公式均按代码逐行还原，不是"理想模型"。
 >
-> **手动请求不经过本公式**：`/compact`（被 manual hook 接管）与 `/precompact compact` 是用户显式发起，不需要预测"何时该压"，也不检查 `minInterval`/`retriggerFloor`/`applyStrategy`/`minShadowedTokens`；它只复用"快照 → 后台摘要 → 边界四连写"，保留区间固定为原生语义（`retainTokens=0`，只留最后一个 surface 节点）。本文件描述的是**自动**预压缩的阈值。
+> **手动请求不经过本公式**：`/compact`（被 manual hook 接管）与 `/precompact compact` 是用户显式发起，不需要预测"何时该压"，也不检查 `minInterval`/`retriggerFloor`/`applyStrategy`/`minShadowedTokens`；它只复用"快照 → 后台摘要 → 边界四连写"，保留区间默认原生语义（`retainTokens=0`，只留最后一个 surface 节点）；**若请求发生在 step 执行中，则以该 step 起点为基线保留整步、只压更早历史**（`preserveFromSeq`）。本文件描述的是**自动**预压缩的阈值。
 
 ---
 
@@ -440,5 +440,5 @@ U_trigger = 800,000 − 4,096 = 795,904 → 79.59% > 750,000
 | **`measure()` 抛错** | `recordMeasureError`：清空上次测量、`lastMeasurementAt = 0`（下一次 surface 事件立即重试）、warn 一行 |
 | **`measure()` 返回 `totalTokens` 非数字/无 `nodes`** | 同上看作测量失败，不进入触发计算 |
 | **任务在途/结果就绪时** | 不再测量、不再加样本（`evaluate()` 提前返回），避免把"压缩中"的上下文变化计入增长 |
-| **手动请求（`/compact` / `/precompact compact`）** | 不计算阈值：`tryManualCompaction()` 直接排队，`decision = {mode:'manual', triggerTokens:0}`；绕过 `applyStrategy`/`minInterval`/`retriggerFloor`/`minShadowedTokens`/内部 5% 收缩门槛；全部提交校验照常生效；保留区间固定 `retainTokens=0`。同会话与自动任务串行（手动会先取代自动工作），不同会话互不阻塞 |
+| **手动请求（`/compact` / `/precompact compact`）** | 不计算阈值：`tryManualCompaction()` 直接排队，`decision = {mode:'manual', triggerTokens:0}`；绕过 `applyStrategy`/`minInterval`/`retriggerFloor`/`minShadowedTokens`/内部 5% 收缩门槛；全部提交校验照常生效；保留区间默认 `retainTokens=0`，**运行中 step 用 `preserveFromSeq` 基线保留整步**；同会话与自动任务串行（手动会先取代自动工作），不同会话互不阻塞 |
 | **`triggerMode='fixed'`** | 没有自适应预测/夹取/降级/突发保护，`dataComplete` 恒为 `true`；触发点 = `round(C×F)`，若 ≥ 原生阈值则按 §2.3 下调 |

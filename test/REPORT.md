@@ -1,7 +1,7 @@
 # 测试实现报告：发现的实现缺陷与观察
 
 > **状态（Lead 更新，2026-11-05）**：本报告发现的 **#1–#5 全部已由 Lead 修复**，原先用于记录“期望行为”的 skip 用例已改为常规回归用例并全绿；3 项低严重度项已定案；配置面随后按用户要求收敛为“只保留异步调度参数”（见“配置面收敛”一节）。
-> 当前 `node --test` 结果：**273 tests / 273 pass / 0 fail / 0 skipped**（约 1.1s；含 `client.test.js` 的 29 个 UI 用例——该文件由 impl-ui 维护）。
+> 当前 `node --test` 结果：**284 tests / 284 pass / 0 fail / 0 skipped**（约 1.1s；含 `client.test.js` 的 29 个 UI 用例——该文件由 impl-ui 维护）。
 > - **#1**：`src/commit.js` 不再写入值为 `undefined` 的字段；`src/summarizer.js` 回退路径同时返回 `rawOutput`。
 > - **#2**：`manual.onAbort` 现在通过 `cancelActiveManualTask()` 真正终止后台任务；迟到的摘要完成不再写事件/状态。
 > - **#3**：手动超时改为 reject `code='cancelled'`（此前用了闭集外的内部码 `'timeout'`）。
@@ -15,6 +15,8 @@
 > - **调试日志系统**：内存环形缓冲（容量 `logBufferSize`，默认 500，0=关闭，volatile 即时生效）+ 字段 sanitize、`snapshot/clear/stats` API、只读 `GET /api/pre-compact/logs` 与 `/precompact logs [n]` 命令（详见“调试日志系统”一节）。
 > - **会话视图可视化数据**：每会话 `samples`（120，每次 evaluate，含 turn/step）、`steps`（全量不设容量，按 step upsert/升序、内存态）与 `history`（30，仅成功提交，含快照时 turn/step）、只读 `GET /api/pre-compact/history`（current 白名单 + 三条序列），与 status/logs 一起注册三条路由（详见“会话视图可视化数据”一节）。
 > - **自适应 warm start**：压缩后 growth 重建期间复用上次 dataComplete 推导的阈值（而不是掉回 65% fallback），policy 与 coordinator 均有回归（详见“自适应 warm start”一节）。
+> - **运行中手动压缩（step 基线）**：`/compact` 在回合执行中请求时保留当前 in-flight step、只压缩更早历史，并在 `step/end` 以
+>   `step-boundary` 安全落地（详见“运行中手动压缩”一节）。
 
 - 测试命令：`node --test`（本机 Node v22.17 / Windows 下 `node --test test/` 会把目录当模块入口报 `Cannot find module ...\test`，已按 Lead 通知改用自动发现）
 - 测试只写 `test/`；未修改 `src/`、`index.js`、`client.js`、`client.test.js`、`package.json`、`cordis.patch.yml`。
@@ -288,6 +290,50 @@ ratio 保留——两者保留尾部不同，预压缩的触发/提交范围会�
 - `samples` 在 trickle 情况下同一毫秒可重复 `at`；曲线的顺序即记录顺序，依赖时间时需自行按 `at` 稳定排序。
 - `history.turn`/`history.step` 在 task 创建/快照开始时捕获（`task.turn`/`task.step`），完成期间的新 `step/start`
   不会改变已记录位置；测试用“任务开始 turn=5/step=3 → 摘要期间 step/start 6/4 → 提交后 history 仍为 5/3”的交叉场景覆盖。
+
+---
+
+## 运行中手动压缩（step 基线）
+
+**动机**：回合执行中用户发起 `/compact` 时，当前正在进行的 step 属于“尚未完成的工作”，不能被当作历史压掉；
+手动压缩应以**当前步之前**为基线，只压缩更早历史，并在当前步结束时安全落地。
+
+**实现形状**（`src/coordinator.js`、`src/snapshot.js`）：
+- `state.currentStepStartSeq`：`step/start` 记录 `event.seq`；`step/end`、`turn/start`、`turn/end` 清空。
+- manual `createSnapshot()` 传入 `preserveFromSeq = state.currentStepStartSeq`：找到第一个 `seq >= preserveFromSeq` 的 surface 节点，
+  `retainTokens = 该节点及其后所有 priced tokens 之和`（保留整个 in-flight step），只压缩更早历史；cutoff 落在第一个可压缩节点
+  或之前 → `skip:'no-compactable-range'`；快照字段 `preserveFromSeq` 记录该 seq（未 preserve 时为 null），`endSeq` 必然
+  早于 `preserveFromSeq`，当前步消息不进入 `shadowedSeqs`；tool-pair 平衡仍由选择器保证（不会拆开 cutoff 前的调用/结果对）。
+- 新边界 `BOUNDARIES.STEP='step-boundary'`：`step/end` 且 `state.ready.manual === true` 时用 `queueMicrotask` 调
+  `applyReady(state, BOUNDARIES.STEP)`（避开当前 append 的 reentrancy，回合继续）；若 `step/end` 先于 READY 到达，
+  边界调用为空操作，随后下一个 pre-step 仍按原路径落地。
+- 没有 in-flight step（idle / 回合开始前）时 `currentStepStartSeq === null`，行为与旧手动压缩一致（retain 0，仅保留最后节点）。
+
+**回归覆盖**：
+- `test/snapshot.test.js`（6 用例）：
+  `a manual snapshot with preserveFromSeq keeps the in-flight step and shadows only earlier history`（endSeq < S、
+  startSeq 为 system 后首节点、`shadowedSeqs` 不含 S 及之后、`preserveFromSeq===S`）、
+  `without preserveFromSeq manual compaction keeps the native retain-0 behavior`（shadowed=nodes[1..-2]、preserveFromSeq null）、
+  `a preserve cutoff without earlier history is skipped as no-compactable-range`、
+  `a preserve cutoff at the first compressible node is skipped as no-compactable-range`、
+  `the preserve cutoff does not split a tool pair even when it sits before the step`（assistant tool call + result 都进入 shadowed，
+  endSeq=result）、
+  `the preserve cutoff walks back over an unmatched tool call instead of splitting it`（未闭合调用被移出 shadowed，endSeq 更早）。
+- `test/step-baseline.test.js`（5 用例，白盒 `createRuntime`）：
+  `an in-flight manual compaction keeps the current step and lands on the step boundary`（step/start 记录基线；摘要期间追加当前步消息；
+  `history[0].boundary==='step-boundary'`；结果 `shadowedRange.end < stepStartSeq` 且 `shadowedSeqs` 全 < S；当前步节点仍在 surface；
+  `lastOutcome.appendedSinceSnapshot===1`；manual promise resolve）、
+  `a step/end that arrives before the summary is ready still lands at the next pre-step`（step/end 先到不报错、无事件；READY 后 pre-step
+  落地，boundary `pre-step`）、
+  `without an in-flight step the manual compaction keeps the old retain-0 behavior`（切回 idle，`currentStepStartSeq=null`、
+  shadowed=nodes[1..-2]、boundary `idle`）、
+  `step/start, step/end and turn boundaries maintain the in-flight baseline`（step/start 记录 seq、step/end 清空、新 step 更新、
+  turn/start 与 turn/end 清空）、
+  `statusFor() exposes currentStepStartSeq: null by default and the step/start seq while running`（公开 status 默认 null、
+  step/start 后等于事件 seq、step/end 后回 null）。
+
+**状态暴露**：`statusOfState()` 现在返回 `currentStepStartSeq`（`state` 值或 null），基线断言走公开的
+`runtime.statusFor(session.id).currentStepStartSeq`；其余断言仍用 `_internals` 驱动的白盒会话。
 
 ---
 
@@ -608,10 +654,12 @@ resolved 对象、host schema 也不再提供该键）；`cordis.patch.yml` 同�
 | `test/logs-endpoint.test.js` | 10 | 200 payload/`no-store`、limit/level/sessionId/sinceSeq 边界与 400、同源/跨源、无 snapshot→500、无 stats→null 字段、`apply()` 注册 status/logs/history 三条 exact 路由并全部注销 |
 | `test/session-view.test.js` | 14 | 白盒 `createRuntime`：顶层 `turn`/`step`（默认 null、事件后更新）、`samples` 容量 120、`steps` 每步 upsert/升序/全量不设容量、`history` 成功提交后 13 字段（含快照时 turn/step）、`history` 容量 30、**adaptive warm start**（data 不完整时保持上次 75% 目标、fresh 会话回退 65%）、dry-run/REJECTED/取消均不追加 |
 | `test/history-endpoint.test.js` | 10 | `GET /api/pre-compact/history` 的 200 结构/`no-store`、`current` 20 键白名单（含 `turn`/`step`）+ 诊断对象裁剪、`turn`/`step` 透传与未观察时 null、隐藏字段不泄漏、samples/steps/history 逐项浅拷贝、未知会话 `current:null`+三个空数组、sessionId 400、同源/跨源、statusFor 抛错→500、非法序列→空数组、三条路由注册/注销 |
+| `test/snapshot.test.js` | 6 | manual `preserveFromSeq`：保留 in-flight step、endSeq<S、shadowed 不含当前步、preserveFromSeq 字段；无 preserve 时 retain-0；cutoff 无更早历史/在首个可压缩节点 → `no-compactable-range`；tool-pair 平衡（闭合对整体压缩、未闭合调用回退不拆） |
+| `test/step-baseline.test.js` | 5 | 白盒 runtime：公开 status 的 `currentStepStartSeq`（默认 null、step/start=事件 seq、step/end/turn 边界清空）、摘要期间追加当前步消息、结果在 `step-boundary` 落地且 shadowed 全 < S、当前步留在 surface、`appendedSinceSnapshot` 正确；step/end 先于 READY → 下一 pre-step 落地；无 in-flight step 回到 retain-0 语义 |
 | `test/visual-status.test.js` | 13 | `buildVisualStatus` 的 idle/working/ready/done/failed 优先级与 8s 窗口边界、failure 新旧比较、manual 透传、outcome/failure 字段裁剪（无内容泄漏）；`createStatusResource` 的 200/JSON/no-store、sessionId 校验（400 且不触达 runtime）、Origin 同源校验（403/200/无 Origin）、null status → idle；`apply()` 注册 status + logs + history 三条 exact 路由并在 dispose 全部注销、无 webServer 时仅 debug 启动 |
 | `test/manual-hook.test.js` | 37 | 安装/接管（agent/created + pre-step 兜底）、`compactNow` wrapper 返回 Promise、宿主形状 `CompactionResult`、委托（enabled=false / dryRun / hookManualCompact=false）、并发 busy、已中止 signal、摘要中 abort（迟到完成不落盘）、session/agent/plugin dispose 取消、**无插件 deadline**、旧 timeout 键被忽略、无区间 resolve null、`minShadowedTokens` 仅保护自动路径、running agent 走 pre-step、**手动 supersede 自动工作（READY 丢弃 / 在途任务 abandon+abort / 自动 small-reduction 不污染手动）**、changed 自动重试、**checkpoint source 带 `sourceCommandId`**、手动保留固定 retain=0、preset 作用域后端、**hook restore 删除 own 属性（原型方法恢复）**、**手动 commit flush（成功调用一次 / 失败仅 warn）**、**prune 保护 pending 手动状态**、session 在 begin 前失效 → cancelled、`/precompact compact` 全部分支、status `Manual request: queued` |
 | `test/summarizer.test.js` | 17 | backend hook 优先与归一化、非 text 块过滤、空摘要/空文本/无路由 fail-closed、fallback llm.stream、**回退固定用会话路由 + 常量 65536（旧 summarization*/maxSummaryTokens 忽略）**、无 llm、MAX_TOKENS/provider 失败、prepareCheckpoint 计价、#1 修复回归（四事件 + 无 undefined 字段） |
 
-> 上表 16 个 `.test.js` 合计 243 个用例（全部启用）；完整 `node --test` 统计为 **273**：
+> 上表 18 个 `.test.js` 合计 254 个用例（全部启用）；完整 `node --test` 统计为 **284**：
 > +1 是 Node 22 自动发现把 `test/fake-harness.js` 当作一个（无测试的）测试文件（空用例），
-> +29 来自 impl-ui 维护的 `test/client.test.js`（UI 卡片，不在本次改动范围；并行编辑中数量会变）。整体 273 pass / 0 fail / 0 skip。
+> +29 来自 impl-ui 维护的 `test/client.test.js`（UI 卡片，不在本次改动范围；并行编辑中数量会变）。整体 284 pass / 0 fail / 0 skip。
