@@ -1,6 +1,6 @@
 {
   "name": "dsh-async-compaction",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Background context pre-compaction for DeepSeek Harness: summarize older history off the critical path and apply it atomically before native compaction has to stop the agent.",
   "type": "module",
   "main": "./index.js",

@@ -4,6 +4,18 @@
 
 在原生压缩（`dsh-compaction-basic`）不得不暂停 Agent 之前，把旧历史的后台摘要提前算好，等到安全边界再**原子地**替换进会话。压缩期间新产生的消息不会被覆盖，主循环不再为一次摘要模型调用停顿；原生压缩仍挂载作为最终兜底。
 
+## 安装
+
+要求 DSH **0.2.2-rc.1+**（Node 22+）。在你的 profile 里安装（`web` 换成实际使用的 profile）：
+
+```bash
+npx @deepseek-ai/dsh plugin --profile web add dsh-async-compaction
+```
+
+它会写入 profile 依赖并自动加进 `dsh.profile.bundles`；`web` profile 热加载，无需重启。装好后 **设置 → 插件** 出现「后台预压缩」卡片，会话头部出现「预压缩」按钮。
+
+卸载：`npx @deepseek-ai/dsh plugin --profile web remove dsh-async-compaction`。
+
 ## 使用
 
 - **自动**：达到触发点后后台摘要，`applyStrategy` 允许的边界（`safe` = pre-step / idle）自动落地
@@ -74,6 +86,19 @@ node scripts/smoke-client.mjs
 ```
 
 不依赖构建步骤，改 `client.js` 后刷新页面即可生效。
+
+### 发布到 npm
+
+npm 账号的写操作要求 2FA；用 passkey 时终端里拿不到 OTP，`npm publish` 会以 `EOTP` 失败，所以走 **staged publishing**（需要 npm >= 11.15.0）：
+
+```bash
+npm login --auth-type=web                    # 浏览器里用 passkey 登录
+npm stage publish                            # 上传到暂存区，不需要 2FA
+npm stage view <stage-id>                    # status 从 validating 变 staged 后才能批准
+npm stage approve <stage-id>                 # 打印 auth/cli/<uuid> 链接，浏览器 passkey 确认
+```
+
+首次发布会先落一个占位版本 `0.0.0-stage`；批准 0.1.0 后用 `npm unpublish dsh-async-compaction@0.0.0-stage` 清掉（72 小时内可撤）。若 `approve` 返回 `E409 ... automated review hasn't finished`，等一两分钟再批。
 
 ## 已知限制
 
