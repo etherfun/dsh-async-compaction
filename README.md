@@ -4,41 +4,6 @@
 
 在原生压缩（`dsh-compaction-basic`）不得不暂停 Agent 之前，把旧历史的后台摘要提前算好，等到安全边界再**原子地**替换进会话。压缩期间新产生的消息不会被覆盖，主循环不再为一次摘要模型调用停顿；原生压缩仍挂载作为最终兜底。
 
-> **契约边界**：本插件只接管 **“何时压缩 + 异步执行”**——触发判定、快照、后台摘要调度、安全边界原子提交，以及手动 `/compact` 的异步化。**“如何压缩”仍归当前压缩后端**：保留区间、摘要模型、质量门槛、参与压缩的模型范围都由后端决定。这样不会和其它压缩插件/后端升级冲突。
-
-- 包名：`dsh-async-compaction`（本地 bundle，不发布 npm）
-- 形态：Host 插件 + bundle（`cordis.patch.yml`）+ 浏览器端三个界面（设置卡片 / composer token 旁指示器 / 右侧边栏「预压缩」面板）
-- 运行时依赖：**无**（Host 只用 `node:` 内置与自身文件；client 只 `require('react')`）
-
-## 特性
-
-- **提前触发**：固定阈值（默认 70%）或自适应预测（按增长速率 + 压缩耗时，压缩后 warm start 保持上次目标）
-- **异步摘要**：复用后端 `summarize()` 钩子（拿不到时退回 `ctx.llm.stream()`），不阻塞主循环
-- **原子落地**：`compaction/start → summary → user/message(replace) → compaction/end`，快照后新增的消息原样保留
-- **手动接管**：`/compact` / `compactNow()` 也走后台上报 + 安全边界提交（`hookManualCompact: false` 可退回原生）
-- **可视化**：composer 指示器 + 右侧边栏面板（按 step 全量趋势、压缩记录、节省时间统计）
-- **可观测**：`/precompact` 命令、结构化日志、三个只读 HTTP 端点
-- **安全阀**：`dryRun`、`applyStrategy`、抗抖动地板、最小收益门、失败自动回退原生
-
-## 安装
-
-要求 DSH **0.2.2-rc.1+**（Node 22）。
-
-1. 把本目录放到 DSH profile 可访问的位置（或 `link:` 到 profile）。
-2. 在 profile 的 `cordis.patch.yml` 里用 bundle 引入：
-
-```yaml
-- include: pre-compact
-```
-
-或在 profile `package.json` 中把本包作为依赖并让 bundle 的 patch 生效：
-
-```json
-{ "dependencies": { "dsh-async-compaction": "link:F:/path/to/dsh-async-compaction" } }
-```
-
-3. 重启 / 重载 DSH，打开 **设置 → 插件** 即可看到「后台预压缩」卡片；会话头部出现「预压缩」按钮。
-
 ## 使用
 
 - **自动**：达到触发点后后台摘要，`applyStrategy` 允许的边界（`safe` = pre-step / idle）自动落地
@@ -57,14 +22,6 @@
 /precompact now          # 立即尝试一次
 /precompact compact      # 同手动压缩
 ```
-
-### HTTP 端点（同源、`no-store`）
-
-| 端点 | 用途 |
-|---|---|
-| `GET /api/pre-compact/status?sessionId=` | composer 指示器用的轻量状态 |
-| `GET /api/pre-compact/logs?limit=&level=&sessionId=&sinceSeq=` | 结构化日志 |
-| `GET /api/pre-compact/history?sessionId=` | 侧边栏数据：`current` + `steps`（全量）+ `samples`（120）+ `history`（30） |
 
 ## 配置
 
@@ -88,8 +45,6 @@
 | `logBufferSize` | `500` | 内存日志环形缓冲 |
 | `statusCommand` | `true` | 是否注册 `/precompact` 命令 |
 
-并发：**单会话固定最多 1 个在途任务 + 1 个待落地结果**；跨会话无全局上限，可并行摘要。
-
 ## 架构
 
 ```
@@ -107,8 +62,6 @@ session/event · agent/pre-step · turn-stopping · idle · 5s timer
         ├── src/history-endpoint.js / visual-status.js / logs-endpoint.js
         └── src/manual-hook.js（接管 /compact）
 ```
-
-目录：`index.js`（Host 入口）、`src/`（Host 实现）、`client.js`（浏览器 half）、`test/`（273 个用例）、`docs/`（设计/算法/限制/验证）、`research/`（调研）。
 
 ## 开发
 
@@ -130,16 +83,6 @@ node scripts/smoke-client.mjs
 - 三个 HTTP 端点无统一鉴权（仅同源校验），只暴露聚合状态，不返回会话内容
 - 自适应 warm start 会沿用“上一次完整预测”的目标；配置或模型变化后可能短暂停留在旧阈值（仍受 min/max 夹取）
 - 与其它压缩插件共存时只负责调度；若后端已同步压缩，本插件会按 generation 校验放弃过期结果
-
-## 文档
-
-- [docs/01-research.md](docs/01-research.md) 调研
-- [docs/02-design.md](docs/02-design.md) 设计（数据契约、UI、端点）
-- [docs/03-adaptive-algorithm.md](docs/03-adaptive-algorithm.md) 自适应算法
-- [docs/04-testing.md](docs/04-testing.md) 测试
-- [docs/05-limitations.md](docs/05-limitations.md) 限制与取舍
-- [docs/06-verification.md](docs/06-verification.md) 验证与未验证项
-- [review/REVIEW-glm-5.3f.md](review/REVIEW-glm-5.3f.md) 独立审查
 
 ## License
 
