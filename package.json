@@ -19,8 +19,7 @@
     "icon.svg",
     "cordis.patch.yml",
     "README.md",
-    "LICENSE",
-    "docs"
+    "LICENSE"
   ],
   "engines": {
     "node": ">=22"

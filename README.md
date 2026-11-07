@@ -68,7 +68,7 @@
 
 ## 配置
 
-16 个键，均可在插件设置卡片中修改；完整语义见 [docs/02-design.md](docs/02-design.md)。
+16 个键，均可在插件设置卡片中修改；每个键的含义、默认值与取值范围都在卡片内就地说明。
 
 | 键 | 默认 | 说明 |
 |---|---|---|
@@ -108,7 +108,7 @@ session/event · agent/pre-step · turn-stopping · idle · 5s timer
         └── src/manual-hook.js（接管 /compact）
 ```
 
-目录：`index.js`（Host 入口）、`src/`（Host 实现）、`client.js`（浏览器 half）、`test/`（284 个用例）、`docs/`（设计/算法/限制/验证）、`research/`（调研）。
+目录：`index.js`（Host 入口）、`src/`（Host 实现）、`client.js`（浏览器 half）、`test/`（284 个用例）、`scripts/`（端到端 smoke 与调试脚本）、`locale/`（中英文案）。
 
 ## 开发
 
@@ -131,16 +131,6 @@ node scripts/smoke-client.mjs
 - 三个 HTTP 端点无统一鉴权（仅同源校验），只暴露聚合状态，不返回会话内容
 - 自适应 warm start 会沿用“上一次完整预测”的目标；配置或模型变化后可能短暂停留在旧阈值（仍受 min/max 夹取）
 - 与其它压缩插件共存时只负责调度；若后端已同步压缩，本插件会按 generation 校验放弃过期结果
-
-## 文档
-
-- [docs/01-research.md](docs/01-research.md) 调研
-- [docs/02-design.md](docs/02-design.md) 设计（数据契约、UI、端点）
-- [docs/03-adaptive-algorithm.md](docs/03-adaptive-algorithm.md) 自适应算法
-- [docs/04-testing.md](docs/04-testing.md) 测试
-- [docs/05-limitations.md](docs/05-limitations.md) 限制与取舍
-- [docs/06-verification.md](docs/06-verification.md) 验证与未验证项
-- [review/REVIEW-glm-5.3f.md](review/REVIEW-glm-5.3f.md) 独立审查
 
 ## License
 

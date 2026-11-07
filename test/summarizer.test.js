@@ -1,6 +1,6 @@
 /**
  * Summarization: the mounted-backend hook, the `ctx.llm.stream()` fallback, the
- * checkpoint pricing, and the fallback commit bug documented in REPORT.md.
+ * checkpoint pricing, and the fallback commit bug found during testing.
  * @module test/summarizer.test
  */
 
@@ -312,7 +312,7 @@ test('prepareCheckpoint frames the message and prices it with the host meter', (
  * emits `{ rawOutput: prepared.rawOutput }` when `llmStreamCall === true`.
  * `Session.append()` snapshots its payload with the host's lossless-JSON
  * validator, which rejects an `undefined` property — so the replacement never
- * lands. See test/REPORT.md.
+ * lands. Regression tests below guard both halves of that fix.
  * @param {{ dryRun?: boolean }} [options]
  */
 function setupFallbackCommit(options = {}) {

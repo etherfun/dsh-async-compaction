@@ -2,8 +2,8 @@
  * Fake DeepSeek Harness for the dsh-async-compaction test suite.
  *
  * Zero third-party dependencies. The fake mirrors the runtime semantics the
- * plugin depends on, with the authoritative source being the extracted host
- * packages under `research/extracted/dsh/node_modules/@deepseek-ai/*`:
+ * plugin depends on, with the authoritative source being the installed host
+ * packages (`@deepseek-ai/*` shipped inside the DSH app):
  *
  * - `dsh-session/lib/index.js` + `types/surface.js` — `Session.append` envelope,
  *   the canonical surface fold, replacement validation and the append
